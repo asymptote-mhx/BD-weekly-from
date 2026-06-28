@@ -294,7 +294,10 @@ h3 {
 }
 
 .weekly-input-page {
+  height: auto;
   min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #f7f0e3;
 }
 
@@ -318,6 +321,31 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.weekly-form-actions {
+  position: sticky;
+  top: 10px;
+  z-index: 10;
+  border: 1px solid #c7af88;
+  border-radius: 8px;
+  background: #fff4dd;
+  box-shadow: 0 10px 28px rgba(80, 56, 24, 0.12);
+  padding: 12px;
+}
+
+.weekly-form-actions strong {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.weekly-form-actions span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .weekly-input-header h1 {

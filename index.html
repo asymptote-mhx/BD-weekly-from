@@ -41,6 +41,16 @@
         </div>
       </section>
 
+      <div class="weekly-form-actions">
+        <div>
+          <strong>保存本周小结</strong>
+          <span>暂存可反复修改；完成后供本地台账读取。</span>
+        </div>
+        <button id="saveWeeklyDraftButton" type="button">暂存</button>
+        <button id="completeWeeklyButton" type="button">完成</button>
+      </div>
+      <div id="weeklyFormResult" class="weekly-result" aria-live="polite"></div>
+
       <section class="weekly-form-section">
         <div class="structured-header">
           <h2>主要拜访人员</h2>
@@ -56,12 +66,6 @@
         </div>
         <div id="weeklyProjectRows" class="weekly-rows"></div>
       </section>
-
-      <div class="weekly-form-actions">
-        <button id="saveWeeklyDraftButton" type="button">暂存</button>
-        <button id="completeWeeklyButton" type="button">完成</button>
-      </div>
-      <div id="weeklyFormResult" class="weekly-result" aria-live="polite"></div>
     </section>
   </main>
 
