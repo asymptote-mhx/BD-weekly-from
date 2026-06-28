@@ -1,10 +1,70 @@
 <!doctype html>
-<html>
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>BD Weekly Form</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>填写本周小结</title>
+  <link rel="stylesheet" href="styles.css?v=20260628-github-save">
 </head>
-<body>
-  <h1>BD Weekly Form is ready.</h1>
+<body class="weekly-input-page">
+  <header class="app-topbar">
+    <div>
+      <p>Weekly Input</p>
+      <strong>填写本周小结</strong>
+    </div>
+    <span>独立填写 · 草稿暂存 · 完成后供台账读取</span>
+  </header>
+
+  <main class="weekly-page-shell">
+    <section id="weeklyInputPanel" class="weekly-input-panel">
+      <div class="weekly-input-header">
+        <div>
+          <p class="eyebrow">Weekly Report</p>
+          <h1>填写本周小结</h1>
+          <span>标题会按本周周一自动生成，可直接保存为草稿，确认无误后再标记完成。</span>
+        </div>
+        <a class="weekly-action-link" href="/" rel="noopener">返回项目台账</a>
+      </div>
+
+      <label class="weekly-title-label">周报标题<input id="weeklyTitleInput" autocomplete="off"></label>
+
+      <section id="githubSettingsPanel" class="weekly-form-section github-settings-panel">
+        <div class="structured-header">
+          <h2>GitHub 保存设置</h2>
+          <button id="saveGithubSettingsButton" type="button">保存设置</button>
+        </div>
+        <div class="github-settings-grid">
+          <label>GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx" autocomplete="username"></label>
+          <label>数据仓库<input id="githubRepoInput" value="BD-weekly-data" autocomplete="off"></label>
+          <label>分支<input id="githubBranchInput" value="main" autocomplete="off"></label>
+          <label class="full-width">Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
+        </div>
+      </section>
+
+      <section class="weekly-form-section">
+        <div class="structured-header">
+          <h2>主要拜访人员</h2>
+          <button id="addWeeklyVisitButton" type="button">新增拜访人员</button>
+        </div>
+        <div id="weeklyVisitRows" class="weekly-rows"></div>
+      </section>
+
+      <section class="weekly-form-section">
+        <div class="structured-header">
+          <h2>项目跟进情况</h2>
+          <button id="addWeeklyProjectButton" type="button">新增项目</button>
+        </div>
+        <div id="weeklyProjectRows" class="weekly-rows"></div>
+      </section>
+
+      <div class="weekly-form-actions">
+        <button id="saveWeeklyDraftButton" type="button">暂存</button>
+        <button id="completeWeeklyButton" type="button">完成</button>
+      </div>
+      <div id="weeklyFormResult" class="weekly-result" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script src="weekly_input.js?v=20260628-github-save"></script>
 </body>
 </html>
