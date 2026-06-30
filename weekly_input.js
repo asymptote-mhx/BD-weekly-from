@@ -15,7 +15,7 @@ const DETAIL_STAGES = [
 
 const TECHNICAL_GROUP_OPTIONS = ["", "一组", "二组", "丁德强团队", "王启宇团队", "自行填写"];
 const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程", "维护服务"];
-const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260628-github-save";
+const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260630-load-draft";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 
 const elements = {
@@ -180,6 +180,9 @@ function saveGitHubSettings() {
   const settings = collectGitHubSettings();
   localStorage.setItem(GITHUB_SETTINGS_KEY, JSON.stringify(settings));
   showWeeklyResult("GitHub 保存设置已保存在当前浏览器。", "success");
+  if (isGitHubSaveMode() && settings.token) {
+    loadWeeklyFromGitHub();
+  }
 }
 
 function utf8ToBase64(text) {
@@ -191,12 +194,26 @@ function utf8ToBase64(text) {
   return btoa(binary);
 }
 
+function base64ToUtf8(value) {
+  const binary = atob(String(value || "").replace(/\s/g, ""));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 function githubHeaders(token) {
   return {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
     "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
+function weeklyGitHubFilePath(title) {
+  const fileName = `${title || mondayReportTitle()}.md`;
+  return {
+    fileName,
+    path: `weekly/${encodeURIComponent(fileName).replace(/%2F/g, "-")}`,
   };
 }
 
@@ -217,8 +234,7 @@ async function saveWeeklyToGitHub(payload) {
     throw new Error("请先填写 GitHub token，并点击“保存设置”。");
   }
   saveGitHubSettings();
-  const fileName = `${payload.title || mondayReportTitle()}.md`;
-  const path = `weekly/${encodeURIComponent(fileName).replace(/%2F/g, "-")}`;
+  const { fileName, path } = weeklyGitHubFilePath(payload.title);
   const markdown = weeklyFormPayloadToMarkdown(payload);
   const sha = await existingGitHubFileSha(settings, path);
   const body = {
@@ -237,6 +253,110 @@ async function saveWeeklyToGitHub(payload) {
     throw new Error(await responseErrorMessage(response));
   }
   return { file: fileName, path };
+}
+
+async function loadWeeklyFromGitHub() {
+  const settings = collectGitHubSettings();
+  if (!settings.token) {
+    showWeeklyResult("请先填写 GitHub token，并点击“保存设置”。", "info");
+    return;
+  }
+  const title = elements.weeklyTitleInput.value.trim() || mondayReportTitle();
+  const { fileName, path } = weeklyGitHubFilePath(title);
+  showWeeklyResult(`正在读取本周小结：${fileName}...`, "info");
+  try {
+    const url = `https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${path}?ref=${encodeURIComponent(settings.branch)}`;
+    const response = await fetch(url, { headers: githubHeaders(settings.token) });
+    if (response.status === 404) {
+      showWeeklyResult("本周还没有已保存的小结，可以直接开始填写。", "info");
+      return;
+    }
+    if (!response.ok) {
+      showWeeklyResult(`读取失败：${await responseErrorMessage(response)}`, "error");
+      return;
+    }
+    const data = await response.json();
+    const markdown = base64ToUtf8(data.content || "");
+    renderWeeklyPayload(parseWeeklyMarkdownToPayload(markdown, title));
+    showWeeklyResult(`已载入 GitHub 上的本周小结：${fileName}。`, "success");
+  } catch (error) {
+    showWeeklyResult(`读取失败：${error.message || error}`, "error");
+  }
+}
+
+function parseKeyValueLine(line) {
+  const cleaned = String(line || "").replace(/^-\s*/, "").trim();
+  const index = cleaned.indexOf("：");
+  if (index < 0) return ["", ""];
+  return [cleaned.slice(0, index).trim(), cleaned.slice(index + 1).trim()];
+}
+
+function parseVisitLine(line) {
+  const visit = {};
+  String(line || "")
+    .replace(/^-\s*/, "")
+    .split("；")
+    .forEach((part) => {
+      const [label, value] = parseKeyValueLine(part);
+      if (label === "单位") visit.unit = value;
+      if (label === "姓名") visit.name = value;
+      if (label === "职务") visit.position = value;
+      if (label === "对应项目") visit.project = value;
+    });
+  return visit;
+}
+
+function parseNextWeekWork(value) {
+  return String(value || "")
+    .split(/；\s*/)
+    .map((item) => item.replace(/^\d+\.\s*/, "").trim())
+    .filter(Boolean);
+}
+
+function markdownSection(text, heading) {
+  const pattern = new RegExp(`(?:^|\\n)## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`);
+  const match = String(text || "").match(pattern);
+  return match ? match[1].trim() : "";
+}
+
+function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
+  const titleMatch = String(markdown || "").match(/^#\s+(.+)$/m);
+  const payload = {
+    title: titleMatch ? titleMatch[1].trim() : fallbackTitle || mondayReportTitle(),
+    visits: [],
+    projects: [],
+  };
+  const visitsText = markdownSection(markdown, "主要拜访人员");
+  payload.visits = visitsText
+    .split("\n")
+    .filter((line) => line.trim().startsWith("-"))
+    .map(parseVisitLine)
+    .filter((visit) => Object.values(visit).some(Boolean));
+
+  const projectsText = markdownSection(markdown, "项目跟进情况");
+  payload.projects = projectsText
+    .split(/\n###\s+/)
+    .map((block) => block.replace(/^###\s+/, "").trim())
+    .filter(Boolean)
+    .map((block) => {
+      const lines = block.split("\n");
+      const project = { name: lines.shift().trim(), next_week_work: [] };
+      lines.forEach((line) => {
+        const [label, value] = parseKeyValueLine(line);
+        if (label === "业主单位") project.owner_org = value;
+        if (label === "地区") project.region = value;
+        if (label === "技术配合组") project.technical_group = value;
+        if (label === "当前进度") project.progress = value;
+        if (label === "当前细分阶段") project.detail_stage = value;
+        if (label === "本周进展") project.current_update = value;
+        if (label === "下周工作") project.next_week_work = parseNextWeekWork(value);
+        if (label === "下一节点时间") project.next_node_time = value;
+        if (label === "关联项目") project.related_project = value;
+        if (label === "备注") project.note = value;
+      });
+      return project;
+    });
+  return payload;
 }
 
 async function responseErrorMessage(response) {
@@ -299,6 +419,16 @@ function addWeeklyProjectRow(row = {}) {
   elements.weeklyProjectRows.appendChild(wrapper);
   const list = wrapper.querySelector(".weekly-work-list");
   workItems.forEach((item) => addWeeklyWorkItem(list, item));
+}
+
+function renderWeeklyPayload(payload) {
+  elements.weeklyTitleInput.value = payload.title || mondayReportTitle();
+  elements.weeklyVisitRows.innerHTML = "";
+  elements.weeklyProjectRows.innerHTML = "";
+  const visits = Array.isArray(payload.visits) && payload.visits.length ? payload.visits : [{}];
+  const projects = Array.isArray(payload.projects) && payload.projects.length ? payload.projects : [{}];
+  visits.forEach((visit) => addWeeklyVisitRow(visit));
+  projects.forEach((project) => addWeeklyProjectRow(project));
 }
 
 function addWeeklyWorkItem(container, value = "") {
@@ -380,7 +510,11 @@ function setupWeeklyInput() {
   addWeeklyVisitRow();
   addWeeklyProjectRow();
   if (isGitHubSaveMode()) {
-    showWeeklyResult("当前为 GitHub 保存模式。第一次使用请填写 token 并保存设置。", "info");
+    if (collectGitHubSettings().token) {
+      loadWeeklyFromGitHub();
+    } else {
+      showWeeklyResult("当前为 GitHub 保存模式。第一次使用请填写 token 并保存设置。", "info");
+    }
   }
 }
 
