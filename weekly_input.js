@@ -15,7 +15,7 @@ const DETAIL_STAGES = [
 
 const TECHNICAL_GROUP_OPTIONS = ["", "一组", "二组", "丁德强团队", "王启宇团队", "自行填写"];
 const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程", "维护服务"];
-const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260630-load-draft";
+const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-global-plan";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 
 const elements = {
@@ -23,8 +23,10 @@ const elements = {
   weeklyTitleInput: document.getElementById("weeklyTitleInput"),
   weeklyVisitRows: document.getElementById("weeklyVisitRows"),
   weeklyProjectRows: document.getElementById("weeklyProjectRows"),
+  weeklyPlanRows: document.getElementById("weeklyPlanRows"),
   addWeeklyVisitButton: document.getElementById("addWeeklyVisitButton"),
   addWeeklyProjectButton: document.getElementById("addWeeklyProjectButton"),
+  addWeeklyPlanButton: document.getElementById("addWeeklyPlanButton"),
   saveWeeklyDraftButton: document.getElementById("saveWeeklyDraftButton"),
   completeWeeklyButton: document.getElementById("completeWeeklyButton"),
   weeklyFormResult: document.getElementById("weeklyFormResult"),
@@ -141,8 +143,6 @@ function weeklyFormPayloadToMarkdown(payload) {
     ].forEach(([label, value]) => {
       lines.push(`- ${label}：${value || ""}`);
     });
-    const workItems = Array.isArray(project.next_week_work) ? project.next_week_work.map(cleanWorkItem).filter(Boolean) : [];
-    lines.push(`- 下周工作：${workItems.map((item, index) => `${index + 1}. ${item}`).join("；")}`);
     [
       ["下一节点时间", project.next_node_time],
       ["关联项目", project.related_project],
@@ -152,6 +152,12 @@ function weeklyFormPayloadToMarkdown(payload) {
     });
   });
   lines.push("", "## 下周工作计划");
+  const planItems = Array.isArray(payload.next_week_plan) ? payload.next_week_plan.map(cleanWorkItem).filter(Boolean) : [];
+  if (planItems.length) {
+    planItems.forEach((item, index) => lines.push(`${index + 1}. ${item}`));
+  } else {
+    lines.push("1. ");
+  }
   return `${lines.join("\n")}\n`;
 }
 
@@ -177,12 +183,16 @@ function collectGitHubSettings() {
 }
 
 function saveGitHubSettings() {
-  const settings = collectGitHubSettings();
-  localStorage.setItem(GITHUB_SETTINGS_KEY, JSON.stringify(settings));
+  persistGitHubSettings();
   showWeeklyResult("GitHub 保存设置已保存在当前浏览器。", "success");
-  if (isGitHubSaveMode() && settings.token) {
+  if (isGitHubSaveMode() && collectGitHubSettings().token) {
     loadWeeklyFromGitHub();
   }
+}
+
+function persistGitHubSettings() {
+  const settings = collectGitHubSettings();
+  localStorage.setItem(GITHUB_SETTINGS_KEY, JSON.stringify(settings));
 }
 
 function utf8ToBase64(text) {
@@ -233,7 +243,20 @@ async function saveWeeklyToGitHub(payload) {
   if (!settings.token) {
     throw new Error("请先填写 GitHub token，并点击“保存设置”。");
   }
-  saveGitHubSettings();
+  persistGitHubSettings();
+  return saveWeeklyToGitHubWithRetry(payload, settings);
+}
+
+async function saveWeeklyToGitHubWithRetry(payload, settings) {
+  try {
+    return await putWeeklyToGitHub(payload, settings);
+  } catch (error) {
+    if (!error.retryableConflict) throw error;
+    return putWeeklyToGitHub(payload, settings);
+  }
+}
+
+async function putWeeklyToGitHub(payload, settings) {
   const { fileName, path } = weeklyGitHubFilePath(payload.title);
   const markdown = weeklyFormPayloadToMarkdown(payload);
   const sha = await existingGitHubFileSha(settings, path);
@@ -250,7 +273,10 @@ async function saveWeeklyToGitHub(payload) {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await responseErrorMessage(response));
+    const message = await responseErrorMessage(response);
+    const error = new Error(message);
+    error.retryableConflict = response.status === 409 || message.includes("does not match");
+    throw error;
   }
   return { file: fileName, path };
 }
@@ -325,6 +351,7 @@ function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
     title: titleMatch ? titleMatch[1].trim() : fallbackTitle || mondayReportTitle(),
     visits: [],
     projects: [],
+    next_week_plan: [],
   };
   const visitsText = markdownSection(markdown, "主要拜访人员");
   payload.visits = visitsText
@@ -356,6 +383,13 @@ function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
       });
       return project;
     });
+  payload.next_week_plan = markdownSection(markdown, "下周工作计划")
+    .split("\n")
+    .map((line) => line.replace(/^\d+\.\s*/, "").trim())
+    .filter(Boolean);
+  if (!payload.next_week_plan.length) {
+    payload.next_week_plan = payload.projects.flatMap((project) => project.next_week_work || []);
+  }
   return payload;
 }
 
@@ -385,9 +419,6 @@ function addWeeklyVisitRow(row = {}) {
 function addWeeklyProjectRow(row = {}) {
   const wrapper = document.createElement("section");
   wrapper.className = "weekly-project-row";
-  const workItems = Array.isArray(row.next_week_work) && row.next_week_work.length
-    ? row.next_week_work
-    : [row.next_work || ""];
   wrapper.innerHTML = `
     <div class="weekly-project-grid">
       <label>项目名称<input data-weekly-field="name" placeholder="项目名称" value="${escapeHtml(row.name || "")}"></label>
@@ -405,30 +436,36 @@ function addWeeklyProjectRow(row = {}) {
       <label>下一节点时间<input data-weekly-field="next_node_time" placeholder="2026-07-05" value="${escapeHtml(row.next_node_time || "")}"></label>
       <label>关联项目<input data-weekly-field="related_project" placeholder="关联项目" value="${escapeHtml(row.related_project || "")}"></label>
       <label class="full-width">本周进展<textarea data-weekly-field="current_update" rows="3">${escapeHtml(row.current_update || "")}</textarea></label>
-      <section class="weekly-work-items full-width">
-        <div class="weekly-work-header">
-          <strong>下周工作</strong>
-          <button type="button" data-add-weekly-work>+</button>
-        </div>
-        <div class="weekly-work-list"></div>
-      </section>
       <label class="full-width">备注<textarea data-weekly-field="note" rows="2">${escapeHtml(row.note || "")}</textarea></label>
     </div>
     <button class="remove-weekly-project" type="button" data-remove-weekly-row>删除项目</button>
   `;
   elements.weeklyProjectRows.appendChild(wrapper);
-  const list = wrapper.querySelector(".weekly-work-list");
-  workItems.forEach((item) => addWeeklyWorkItem(list, item));
 }
 
 function renderWeeklyPayload(payload) {
   elements.weeklyTitleInput.value = payload.title || mondayReportTitle();
   elements.weeklyVisitRows.innerHTML = "";
   elements.weeklyProjectRows.innerHTML = "";
+  elements.weeklyPlanRows.innerHTML = "";
   const visits = Array.isArray(payload.visits) && payload.visits.length ? payload.visits : [{}];
   const projects = Array.isArray(payload.projects) && payload.projects.length ? payload.projects : [{}];
+  const planItems = Array.isArray(payload.next_week_plan) && payload.next_week_plan.length ? payload.next_week_plan : [""];
   visits.forEach((visit) => addWeeklyVisitRow(visit));
   projects.forEach((project) => addWeeklyProjectRow(project));
+  planItems.forEach((item) => addWeeklyPlanItem(item));
+}
+
+function addWeeklyPlanItem(value = "") {
+  const wrapper = document.createElement("div");
+  wrapper.className = "weekly-plan-row";
+  wrapper.innerHTML = `
+    <span class="weekly-work-index"></span>
+    <input data-weekly-plan-item placeholder="下周工作" value="${escapeHtml(value || "")}">
+    <button type="button" data-remove-weekly-plan>删除</button>
+  `;
+  elements.weeklyPlanRows.appendChild(wrapper);
+  renumberWeeklyPlanItems();
 }
 
 function addWeeklyWorkItem(container, value = "") {
@@ -445,6 +482,12 @@ function addWeeklyWorkItem(container, value = "") {
 
 function renumberWeeklyWorkItems(container) {
   [...container.querySelectorAll(".weekly-work-item")].forEach((item, index) => {
+    item.querySelector(".weekly-work-index").textContent = `${index + 1}.`;
+  });
+}
+
+function renumberWeeklyPlanItems() {
+  [...elements.weeklyPlanRows.querySelectorAll(".weekly-plan-row")].forEach((item, index) => {
     item.querySelector(".weekly-work-index").textContent = `${index + 1}.`;
   });
 }
@@ -472,6 +515,9 @@ function collectWeeklyForm(status = "draft") {
     import_now: false,
     visits: collectWeeklyRows(elements.weeklyVisitRows),
     projects: collectWeeklyRows(elements.weeklyProjectRows),
+    next_week_plan: [...elements.weeklyPlanRows.querySelectorAll("[data-weekly-plan-item]")]
+      .map((input) => input.value.trim())
+      .filter(Boolean),
   };
 }
 
@@ -509,6 +555,7 @@ function setupWeeklyInput() {
   elements.weeklyTitleInput.value = mondayReportTitle();
   addWeeklyVisitRow();
   addWeeklyProjectRow();
+  addWeeklyPlanItem();
   if (isGitHubSaveMode()) {
     if (collectGitHubSettings().token) {
       loadWeeklyFromGitHub();
@@ -520,6 +567,7 @@ function setupWeeklyInput() {
 
 elements.addWeeklyVisitButton.addEventListener("click", () => addWeeklyVisitRow());
 elements.addWeeklyProjectButton.addEventListener("click", () => addWeeklyProjectRow());
+elements.addWeeklyPlanButton.addEventListener("click", () => addWeeklyPlanItem());
 elements.saveGithubSettingsButton.addEventListener("click", saveGitHubSettings);
 elements.saveWeeklyDraftButton.addEventListener("click", () => saveWeeklyForm("draft"));
 elements.completeWeeklyButton.addEventListener("click", () => saveWeeklyForm("completed"));
@@ -536,6 +584,13 @@ elements.weeklyInputPanel.addEventListener("click", (event) => {
     const list = removeWorkButton.closest(".weekly-work-list");
     removeWorkButton.closest(".weekly-work-item")?.remove();
     if (list) renumberWeeklyWorkItems(list);
+    return;
+  }
+  const removePlanButton = event.target.closest("[data-remove-weekly-plan]");
+  if (removePlanButton) {
+    removePlanButton.closest(".weekly-plan-row")?.remove();
+    if (!elements.weeklyPlanRows.children.length) addWeeklyPlanItem();
+    renumberWeeklyPlanItems();
     return;
   }
   const button = event.target.closest("[data-remove-weekly-row]");

@@ -488,6 +488,13 @@ h3 {
   grid-template-columns: 34px minmax(0, 1fr) 70px;
 }
 
+.weekly-plan-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 70px;
+  align-items: center;
+  gap: 8px;
+}
+
 .weekly-work-index {
   color: var(--gold);
   font-weight: 900;
