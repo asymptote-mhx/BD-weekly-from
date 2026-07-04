@@ -490,7 +490,7 @@ h3 {
 
 .weekly-plan-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 70px;
+  grid-template-columns: 34px minmax(160px, .7fr) minmax(0, 1.3fr) 70px;
   align-items: center;
   gap: 8px;
 }

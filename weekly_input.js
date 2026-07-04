@@ -15,7 +15,7 @@ const DETAIL_STAGES = [
 
 const TECHNICAL_GROUP_OPTIONS = ["", "一组", "二组", "丁德强团队", "王启宇团队", "自行填写"];
 const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程", "维护服务"];
-const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-global-plan";
+const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-plan-project";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 
 const elements = {
@@ -152,13 +152,24 @@ function weeklyFormPayloadToMarkdown(payload) {
     });
   });
   lines.push("", "## 下周工作计划");
-  const planItems = Array.isArray(payload.next_week_plan) ? payload.next_week_plan.map(cleanWorkItem).filter(Boolean) : [];
+  const planItems = Array.isArray(payload.next_week_plan) ? payload.next_week_plan.map(formatWeeklyPlanItem).filter(Boolean) : [];
   if (planItems.length) {
     planItems.forEach((item, index) => lines.push(`${index + 1}. ${item}`));
   } else {
     lines.push("1. ");
   }
   return `${lines.join("\n")}\n`;
+}
+
+function formatWeeklyPlanItem(item) {
+  if (item && typeof item === "object") {
+    const project = cleanWorkItem(item.project || "");
+    const work = cleanWorkItem(item.work || "");
+    if (project && work) return `关联项目：${project}；工作内容：${work}`;
+    if (project) return `关联项目：${project}`;
+    return work;
+  }
+  return cleanWorkItem(item || "");
 }
 
 function loadGitHubSettings() {
@@ -339,6 +350,18 @@ function parseNextWeekWork(value) {
     .filter(Boolean);
 }
 
+function parseWeeklyPlanLine(line) {
+  const cleaned = String(line || "").replace(/^\d+\.\s*/, "").trim();
+  const item = { project: "", work: "" };
+  cleaned.split("；").forEach((part) => {
+    const [label, value] = parseKeyValueLine(part);
+    if (label === "关联项目") item.project = value;
+    if (label === "工作内容") item.work = value;
+  });
+  if (!item.project && !item.work) item.work = cleaned;
+  return item;
+}
+
 function markdownSection(text, heading) {
   const pattern = new RegExp(`(?:^|\\n)## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`);
   const match = String(text || "").match(pattern);
@@ -385,10 +408,10 @@ function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
     });
   payload.next_week_plan = markdownSection(markdown, "下周工作计划")
     .split("\n")
-    .map((line) => line.replace(/^\d+\.\s*/, "").trim())
-    .filter(Boolean);
+    .map(parseWeeklyPlanLine)
+    .filter((item) => item.project || item.work);
   if (!payload.next_week_plan.length) {
-    payload.next_week_plan = payload.projects.flatMap((project) => project.next_week_work || []);
+    payload.next_week_plan = payload.projects.flatMap((project) => (project.next_week_work || []).map((work) => ({ project: project.name || "", work })));
   }
   return payload;
 }
@@ -413,10 +436,10 @@ function addWeeklyVisitRow(row = {}) {
     <input data-weekly-field="project" placeholder="对应项目" value="${escapeHtml(row.project || "")}">
     <button type="button" data-remove-weekly-row>删除</button>
   `;
-  elements.weeklyVisitRows.appendChild(wrapper);
+  prependWeeklyRow(elements.weeklyVisitRows, wrapper);
 }
 
-function addWeeklyProjectRow(row = {}) {
+function addWeeklyProjectRow(row = {}, options = {}) {
   const wrapper = document.createElement("section");
   wrapper.className = "weekly-project-row";
   wrapper.innerHTML = `
@@ -440,7 +463,23 @@ function addWeeklyProjectRow(row = {}) {
     </div>
     <button class="remove-weekly-project" type="button" data-remove-weekly-row>删除项目</button>
   `;
-  elements.weeklyProjectRows.appendChild(wrapper);
+  prependWeeklyRow(elements.weeklyProjectRows, wrapper, options);
+}
+
+function prependWeeklyRow(container, wrapper, options = {}) {
+  if (options.append) {
+    container.appendChild(wrapper);
+    return;
+  }
+  if (container === elements.weeklyProjectRows) {
+    elements.weeklyProjectRows.prepend(wrapper);
+    return;
+  }
+  if (container === elements.weeklyPlanRows) {
+    elements.weeklyPlanRows.prepend(wrapper);
+    return;
+  }
+  container.prepend(wrapper);
 }
 
 function renderWeeklyPayload(payload) {
@@ -452,19 +491,21 @@ function renderWeeklyPayload(payload) {
   const projects = Array.isArray(payload.projects) && payload.projects.length ? payload.projects : [{}];
   const planItems = Array.isArray(payload.next_week_plan) && payload.next_week_plan.length ? payload.next_week_plan : [""];
   visits.forEach((visit) => addWeeklyVisitRow(visit));
-  projects.forEach((project) => addWeeklyProjectRow(project));
-  planItems.forEach((item) => addWeeklyPlanItem(item));
+  projects.forEach((project) => addWeeklyProjectRow(project, { append: true }));
+  planItems.forEach((item) => addWeeklyPlanItem(item, { append: true }));
 }
 
-function addWeeklyPlanItem(value = "") {
+function addWeeklyPlanItem(value = "", options = {}) {
+  const item = value && typeof value === "object" ? value : { project: "", work: value || "" };
   const wrapper = document.createElement("div");
   wrapper.className = "weekly-plan-row";
   wrapper.innerHTML = `
     <span class="weekly-work-index"></span>
-    <input data-weekly-plan-item placeholder="下周工作" value="${escapeHtml(value || "")}">
+    <input data-weekly-plan-project placeholder="关联项目" value="${escapeHtml(item.project || "")}">
+    <input data-weekly-plan-item placeholder="工作内容" value="${escapeHtml(item.work || "")}">
     <button type="button" data-remove-weekly-plan>删除</button>
   `;
-  elements.weeklyPlanRows.appendChild(wrapper);
+  prependWeeklyRow(elements.weeklyPlanRows, wrapper, options);
   renumberWeeklyPlanItems();
 }
 
@@ -515,9 +556,12 @@ function collectWeeklyForm(status = "draft") {
     import_now: false,
     visits: collectWeeklyRows(elements.weeklyVisitRows),
     projects: collectWeeklyRows(elements.weeklyProjectRows),
-    next_week_plan: [...elements.weeklyPlanRows.querySelectorAll("[data-weekly-plan-item]")]
-      .map((input) => input.value.trim())
-      .filter(Boolean),
+    next_week_plan: [...elements.weeklyPlanRows.querySelectorAll(".weekly-plan-row")]
+      .map((row) => ({
+        project: row.querySelector("[data-weekly-plan-project]")?.value.trim() || "",
+        work: row.querySelector("[data-weekly-plan-item]")?.value.trim() || "",
+      }))
+      .filter((item) => item.project || item.work),
   };
 }
 
