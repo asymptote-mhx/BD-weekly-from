@@ -17,6 +17,8 @@ const TECHNICAL_GROUP_OPTIONS = ["", "一组", "二组", "丁德强团队", "王
 const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程", "维护服务"];
 const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-plan-project";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
+const LEDGER_SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
+const state = { ledgerProjects: [] };
 
 const elements = {
   weeklyInputPanel: document.getElementById("weeklyInputPanel"),
@@ -25,7 +27,8 @@ const elements = {
   weeklyProjectRows: document.getElementById("weeklyProjectRows"),
   weeklyPlanRows: document.getElementById("weeklyPlanRows"),
   addWeeklyVisitButton: document.getElementById("addWeeklyVisitButton"),
-  addWeeklyProjectButton: document.getElementById("addWeeklyProjectButton"),
+  addLedgerWeeklyProjectButton: document.getElementById("addLedgerWeeklyProjectButton"),
+  addCustomWeeklyProjectButton: document.getElementById("addCustomWeeklyProjectButton"),
   addWeeklyPlanButton: document.getElementById("addWeeklyPlanButton"),
   saveWeeklyDraftButton: document.getElementById("saveWeeklyDraftButton"),
   completeWeeklyButton: document.getElementById("completeWeeklyButton"),
@@ -140,6 +143,7 @@ function weeklyFormPayloadToMarkdown(payload) {
       ["当前进度", project.progress],
       ["当前细分阶段", project.detail_stage],
       ["本周进展", project.current_update],
+      ["下一步工作", project.next_work],
     ].forEach(([label, value]) => {
       lines.push(`- ${label}：${value || ""}`);
     });
@@ -193,11 +197,16 @@ function collectGitHubSettings() {
   };
 }
 
-function saveGitHubSettings() {
+async function saveGitHubSettings() {
   persistGitHubSettings();
   showWeeklyResult("GitHub 保存设置已保存在当前浏览器。", "success");
   if (isGitHubSaveMode() && collectGitHubSettings().token) {
-    loadWeeklyFromGitHub();
+    try {
+      await loadLedgerProjects();
+      await loadWeeklyFromGitHub();
+    } catch (error) {
+      showWeeklyResult(`GitHub 设置已保存，但读取失败：${error.message || error}`, "error");
+    }
   }
 }
 
@@ -236,6 +245,25 @@ function weeklyGitHubFilePath(title) {
     fileName,
     path: `weekly/${encodeURIComponent(fileName).replace(/%2F/g, "-")}`,
   };
+}
+
+function githubContentUrl(settings, path) {
+  return `https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${path}?ref=${encodeURIComponent(settings.branch)}`;
+}
+
+async function loadLedgerProjects() {
+  if (!isGitHubSaveMode()) return;
+  const settings = collectGitHubSettings();
+  if (!settings.token) return;
+  const response = await fetch(githubContentUrl(settings, LEDGER_SNAPSHOT_PATH), { headers: githubHeaders(settings.token) });
+  if (!response.ok) throw new Error(`台账快照读取失败：${await responseErrorMessage(response)}`);
+  const file = await response.json();
+  const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
+  state.ledgerProjects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
+  document.querySelectorAll("[data-ledger-project]").forEach((select) => {
+    const selected = select.value;
+    select.innerHTML = ledgerProjectOptions(selected);
+  });
 }
 
 async function existingGitHubFileSha(settings, path) {
@@ -399,6 +427,7 @@ function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
         if (label === "当前进度") project.progress = value;
         if (label === "当前细分阶段") project.detail_stage = value;
         if (label === "本周进展") project.current_update = value;
+        if (label === "下一步工作") project.next_work = value;
         if (label === "下周工作") project.next_week_work = parseNextWeekWork(value);
         if (label === "下一节点时间") project.next_node_time = value;
         if (label === "关联项目") project.related_project = value;
@@ -439,9 +468,10 @@ function addWeeklyVisitRow(row = {}) {
   prependWeeklyRow(elements.weeklyVisitRows, wrapper);
 }
 
-function addWeeklyProjectRow(row = {}, options = {}) {
+function addCustomWeeklyProjectRow(row = {}, options = {}) {
   const wrapper = document.createElement("section");
   wrapper.className = "weekly-project-row";
+  wrapper.dataset.weeklyMode = "custom";
   wrapper.innerHTML = `
     <div class="weekly-project-grid">
       <label>项目名称<input data-weekly-field="name" placeholder="项目名称" value="${escapeHtml(row.name || "")}"></label>
@@ -463,6 +493,60 @@ function addWeeklyProjectRow(row = {}, options = {}) {
     </div>
     <button class="remove-weekly-project" type="button" data-remove-weekly-row>删除项目</button>
   `;
+  prependWeeklyRow(elements.weeklyProjectRows, wrapper, options);
+}
+
+function addWeeklyProjectRow(row = {}, options = {}) {
+  addCustomWeeklyProjectRow(row, options);
+}
+
+function ledgerProjectOptions(selectedId = "") {
+  const options = ['<option value="">请选择台账项目</option>'];
+  state.ledgerProjects.forEach((project) => {
+    const id = String(project.project_id || "");
+    const name = String(project["项目名称"] || "");
+    options.push(`<option value="${escapeHtml(id)}"${id === selectedId ? " selected" : ""}>${escapeHtml(name)}</option>`);
+  });
+  return options.join("");
+}
+
+function applyLedgerProject(row, projectId) {
+  const project = state.ledgerProjects.find((item) => item.project_id === projectId);
+  if (!project) return;
+  const fields = {
+    name: project["项目名称"], owner_org: project["业主单位"], region: project["地区"],
+    technical_group: project["技术配合类型"], progress: project["当前进度"],
+    detail_stage: project["当前细分阶段"], next_node_time: project["下一节点时间"],
+  };
+  Object.entries(fields).forEach(([key, value]) => {
+    const input = row.querySelector(`[data-weekly-field="${key}"]`);
+    if (input) input.value = String(value || "").trim();
+  });
+}
+
+function addLedgerWeeklyProjectRow(row = {}, options = {}) {
+  const wrapper = document.createElement("section");
+  wrapper.className = "weekly-project-row";
+  wrapper.dataset.weeklyMode = "ledger";
+  wrapper.innerHTML = `
+    <div class="weekly-project-grid" data-weekly-mode="ledger">
+      <label class="full-width">台账项目<select data-ledger-project>${ledgerProjectOptions(row.project_id || "")}</select></label>
+      <label>项目名称<input data-weekly-field="name" readonly value="${escapeHtml(row.name || "")}"></label>
+      <label>业主单位<input data-weekly-field="owner_org" readonly value="${escapeHtml(row.owner_org || "")}"></label>
+      <label>地区<input data-weekly-field="region" readonly value="${escapeHtml(row.region || "")}"></label>
+      <label>技术配合组<select data-weekly-field="technical_group" disabled>${optionHtml(TECHNICAL_GROUP_OPTIONS, row.technical_group || "")}</select></label>
+      <label>当前进度<select data-weekly-field="progress">${optionHtml(WEEKLY_PROGRESS_OPTIONS, row.progress || "项目接触")}</select></label>
+      <label>当前细分阶段<select data-weekly-field="detail_stage">${optionHtml(DETAIL_STAGES, row.detail_stage || "线索获取")}</select></label>
+      <label>下一节点时间<input data-weekly-field="next_node_time" value="${escapeHtml(row.next_node_time || "")}"></label>
+      <label>关联项目<input data-weekly-field="related_project" value="${escapeHtml(row.related_project || "")}"></label>
+      <label class="full-width">本周进展<textarea data-weekly-field="current_update" rows="3">${escapeHtml(row.current_update || "")}</textarea></label>
+      <label class="full-width">下一步工作<textarea data-weekly-field="next_work" rows="2">${escapeHtml(row.next_work || "")}</textarea></label>
+      <label class="full-width">备注<textarea data-weekly-field="note" rows="2">${escapeHtml(row.note || "")}</textarea></label>
+    </div>
+    <button class="remove-weekly-project" type="button" data-remove-weekly-row>删除项目</button>`;
+  const selector = wrapper.querySelector("[data-ledger-project]");
+  selector.addEventListener("change", () => applyLedgerProject(wrapper, selector.value));
+  if (selector.value) applyLedgerProject(wrapper, selector.value);
   prependWeeklyRow(elements.weeklyProjectRows, wrapper, options);
 }
 
@@ -491,7 +575,7 @@ function renderWeeklyPayload(payload) {
   const projects = Array.isArray(payload.projects) && payload.projects.length ? payload.projects : [{}];
   const planItems = Array.isArray(payload.next_week_plan) && payload.next_week_plan.length ? payload.next_week_plan : [""];
   visits.forEach((visit) => addWeeklyVisitRow(visit));
-  projects.forEach((project) => addWeeklyProjectRow(project, { append: true }));
+  projects.forEach((project) => addCustomWeeklyProjectRow(project, { append: true }));
   planItems.forEach((item) => addWeeklyPlanItem(item, { append: true }));
 }
 
@@ -565,11 +649,23 @@ function collectWeeklyForm(status = "draft") {
   };
 }
 
+function validateWeeklyProjectRows(status) {
+  if (status !== "completed") return true;
+  const missing = [...elements.weeklyProjectRows.querySelectorAll('[data-weekly-mode="ledger"]')]
+    .find((row) => !row.querySelector("[data-ledger-project]")?.value);
+  if (!missing) return true;
+  const selector = missing.querySelector("[data-ledger-project]");
+  selector.focus();
+  showWeeklyResult("请选择台账项目后再完成本周小结。", "error");
+  return false;
+}
+
 async function saveWeeklyForm(status = "draft") {
   const button = status === "completed" ? elements.completeWeeklyButton : elements.saveWeeklyDraftButton;
   button.disabled = true;
   showWeeklyResult(status === "completed" ? "正在保存完成稿..." : "正在暂存草稿...", "info");
   try {
+    if (!validateWeeklyProjectRows(status)) return;
     const payload = collectWeeklyForm(status);
     if (isGitHubSaveMode()) {
       const data = await saveWeeklyToGitHub(payload);
@@ -594,15 +690,20 @@ async function saveWeeklyForm(status = "draft") {
   }
 }
 
-function setupWeeklyInput() {
+async function setupWeeklyInput() {
   loadGitHubSettings();
   elements.weeklyTitleInput.value = mondayReportTitle();
   addWeeklyVisitRow();
-  addWeeklyProjectRow();
+  addLedgerWeeklyProjectRow();
   addWeeklyPlanItem();
   if (isGitHubSaveMode()) {
     if (collectGitHubSettings().token) {
-      loadWeeklyFromGitHub();
+      try {
+        await loadLedgerProjects();
+        await loadWeeklyFromGitHub();
+      } catch (error) {
+        showWeeklyResult(`GitHub 读取失败：${error.message || error}`, "error");
+      }
     } else {
       showWeeklyResult("当前为 GitHub 保存模式。第一次使用请填写 token 并保存设置。", "info");
     }
@@ -610,7 +711,8 @@ function setupWeeklyInput() {
 }
 
 elements.addWeeklyVisitButton.addEventListener("click", () => addWeeklyVisitRow());
-elements.addWeeklyProjectButton.addEventListener("click", () => addWeeklyProjectRow());
+elements.addLedgerWeeklyProjectButton.addEventListener("click", () => addLedgerWeeklyProjectRow());
+elements.addCustomWeeklyProjectButton.addEventListener("click", () => addCustomWeeklyProjectRow());
 elements.addWeeklyPlanButton.addEventListener("click", () => addWeeklyPlanItem());
 elements.saveGithubSettingsButton.addEventListener("click", saveGitHubSettings);
 elements.saveWeeklyDraftButton.addEventListener("click", () => saveWeeklyForm("draft"));
