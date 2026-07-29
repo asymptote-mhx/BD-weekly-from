@@ -31,6 +31,8 @@
       <div class="ledger-view-actions">
         <a href="index.html" class="weekly-action-link">填写周报</a>
         <button id="loadLedgerButton" type="button">读取台账</button>
+        <button id="exportWeeklyReportButton" type="button">导出工作小结</button>
+        <button id="exportMeetingListButton" type="button">导出例会清单</button>
       </div>
       <div id="ledgerResult" class="weekly-result" aria-live="polite"></div>
     </section>
@@ -47,6 +49,21 @@
           </select>
           <select id="technicalFilter" aria-label="技术配合组筛选">
             <option value="">全部技术配合组</option>
+          </select>
+          <select id="statusFilter" aria-label="记录状态筛选">
+            <option value="正常">正常项目</option>
+            <option value="已归档">已归档</option>
+            <option value="">全部记录</option>
+          </select>
+          <select id="sortBy" aria-label="排序">
+            <option value="stage">项目进度排序</option>
+            <option value="priority">重要等级排序</option>
+            <option value="updatedDesc">最近更新优先</option>
+            <option value="investmentDesc">投资额从大到小</option>
+            <option value="下一节点时间">下一节点时间</option>
+            <option value="地区">地区</option>
+            <option value="业主单位">业主单位</option>
+            <option value="当前细分阶段">当前细分阶段</option>
           </select>
         </div>
         <div id="projectCount" class="panel-summary">尚未读取台账。</div>

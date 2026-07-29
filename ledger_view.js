@@ -12,6 +12,37 @@ const CARD_CLASS = {
   招标流程: "stage-bid-card",
   维护服务: "stage-service-card",
 };
+const STAGE_ORDER = [
+  "线索获取",
+  "关键人接触",
+  "需求确认",
+  "资料收集",
+  "初步方案",
+  "标前准备",
+  "投标中",
+  "定标阶段",
+  "合同签署",
+  "建设期",
+  "建成",
+  "衔接下阶段招标",
+];
+const PROGRESS_ORDER = ["维护服务", "招标流程", "前期方案", "项目接触"];
+const PROGRESS_BY_STAGE = {
+  线索获取: "项目接触",
+  关键人接触: "项目接触",
+  需求确认: "项目接触",
+  资料收集: "前期方案",
+  初步方案: "前期方案",
+  标前准备: "招标流程",
+  投标中: "招标流程",
+  定标阶段: "招标流程",
+  合同签署: "招标流程",
+  建设期: "维护服务",
+  建成: "维护服务",
+  衔接下阶段招标: "维护服务",
+};
+const PRIORITY_ORDER = ["S", "A", "B", "C"];
+const MEETING_GROUP_ORDER = ["一组", "二组", "丁德强组", "未分组项目"];
 
 const state = {
   projects: [],
@@ -33,6 +64,10 @@ const elements = {
   progressFilter: document.getElementById("progressFilter"),
   regionFilter: document.getElementById("regionFilter"),
   technicalFilter: document.getElementById("technicalFilter"),
+  statusFilter: document.getElementById("statusFilter"),
+  sortBy: document.getElementById("sortBy"),
+  exportWeeklyReportButton: document.getElementById("exportWeeklyReportButton"),
+  exportMeetingListButton: document.getElementById("exportMeetingListButton"),
   projectCount: document.getElementById("projectCount"),
   projectList: document.getElementById("projectList"),
   detailTitle: document.getElementById("detailTitle"),
@@ -129,6 +164,10 @@ function field(project, key) {
   return String(project?.[key] || "").trim();
 }
 
+function recordStatus(project) {
+  return field(project, "记录状态") || "正常";
+}
+
 function uniqueOptions(key) {
   return [...new Set(state.projects.map((project) => field(project, key)).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
@@ -151,6 +190,8 @@ function applyFilters() {
   const progress = elements.progressFilter.value;
   const region = elements.regionFilter.value;
   const technical = elements.technicalFilter.value;
+  const status = elements.statusFilter.value;
+  const sortBy = elements.sortBy.value || "stage";
   state.filtered = state.projects.filter((project) => {
     const haystack = [
       field(project, "项目名称"),
@@ -164,8 +205,66 @@ function applyFilters() {
     return (!query || haystack.includes(query))
       && (!progress || field(project, "当前进度") === progress)
       && (!region || field(project, "地区") === region)
-      && (!technical || field(project, "技术配合类型") === technical);
-  });
+      && (!technical || field(project, "技术配合类型") === technical)
+      && (!status || recordStatus(project) === status);
+  }).sort((a, b) => compareProjects(a, b, sortBy));
+}
+
+function priorityIndex(project) {
+  const index = PRIORITY_ORDER.indexOf(field(project, "项目优先级").toUpperCase());
+  return index === -1 ? PRIORITY_ORDER.length : index;
+}
+
+function stageIndex(project) {
+  const index = STAGE_ORDER.indexOf(field(project, "当前细分阶段"));
+  return index === -1 ? STAGE_ORDER.length : STAGE_ORDER.length - 1 - index;
+}
+
+function progressIndex(project) {
+  const progress = field(project, "当前进度") || PROGRESS_BY_STAGE[field(project, "当前细分阶段")] || "";
+  const index = PROGRESS_ORDER.indexOf(progress);
+  return index === -1 ? PROGRESS_ORDER.length : index;
+}
+
+function parseInvestment(rawValue) {
+  const text = String(rawValue || "").replace(/,/g, "").trim();
+  const match = text.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const amount = Number.parseFloat(match[1]);
+  if (!Number.isFinite(amount)) return 0;
+  if (text.includes("万") && !text.includes("亿")) return amount / 10000;
+  return amount;
+}
+
+function parseTime(rawValue) {
+  const time = Date.parse(String(rawValue || "").replace(/\./g, "-").replace(/\//g, "-"));
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareText(a, b, key) {
+  return field(a, key).localeCompare(field(b, key), "zh-CN");
+}
+
+function comparePriorityThenStageThenName(a, b) {
+  return priorityIndex(a) - priorityIndex(b)
+    || stageIndex(a) - stageIndex(b)
+    || compareText(a, b, "项目名称");
+}
+
+function compareProjects(a, b, sortBy) {
+  if (sortBy === "stage") {
+    return progressIndex(a) - progressIndex(b) || comparePriorityThenStageThenName(a, b);
+  }
+  if (sortBy === "priority") {
+    return comparePriorityThenStageThenName(a, b);
+  }
+  if (sortBy === "updatedDesc") {
+    return parseTime(field(b, "最近更新时间")) - parseTime(field(a, "最近更新时间")) || comparePriorityThenStageThenName(a, b);
+  }
+  if (sortBy === "investmentDesc") {
+    return parseInvestment(field(b, "总投资")) - parseInvestment(field(a, "总投资")) || comparePriorityThenStageThenName(a, b);
+  }
+  return compareText(a, b, sortBy) || comparePriorityThenStageThenName(a, b);
 }
 
 function stageClass(project) {
@@ -177,7 +276,9 @@ function cardClass(project) {
 }
 
 function renderProjectList() {
-  elements.projectCount.textContent = `共 ${state.filtered.length} / ${state.projects.length} 个项目`;
+  const normalCount = state.projects.filter((project) => recordStatus(project) === "正常").length;
+  const archivedCount = state.projects.filter((project) => recordStatus(project) === "已归档").length;
+  elements.projectCount.textContent = `当前 ${state.filtered.length} 个；正常 ${normalCount} 个，已归档 ${archivedCount} 个，总计 ${state.projects.length} 个`;
   if (!state.filtered.length) {
     elements.projectList.innerHTML = '<div class="empty-state">没有匹配的项目。</div>';
     return;
@@ -232,6 +333,107 @@ function section(title, body) {
   const content = String(body || "").trim();
   if (!content) return "";
   return `<section class="chain-section"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(content)}</p></section>`;
+}
+
+function mondayReportTitle(date = new Date()) {
+  const monday = new Date(date);
+  const day = monday.getDay() || 7;
+  monday.setDate(monday.getDate() - day + 1);
+  return `${String(monday.getFullYear()).slice(2)}${String(monday.getMonth() + 1).padStart(2, "0")}${String(monday.getDate()).padStart(2, "0")}_周工作小结`;
+}
+
+function activeExportProjects() {
+  return state.filtered.length ? state.filtered : [];
+}
+
+function exportWeeklyReportMarkdown() {
+  const projects = activeExportProjects();
+  if (!projects.length) {
+    showResult("没有可导出的项目。", "error");
+    return;
+  }
+  const lines = [
+    `# ${mondayReportTitle()}`,
+    "",
+    "## 主要拜访人员",
+    "- ",
+    "",
+    "## 项目跟进情况",
+  ];
+  projects.forEach((project) => {
+    lines.push(
+      "",
+      `### ${field(project, "项目名称")}`,
+      `- 业主单位：${field(project, "业主单位")}`,
+      `- 地区：${field(project, "地区")}`,
+      `- 技术配合组：${field(project, "技术配合类型")}`,
+      `- 当前进度：${field(project, "当前进度")}`,
+      `- 当前细分阶段：${field(project, "当前细分阶段")}`,
+      `- 本周进展：${field(project, "状态备注")}`,
+      `- 下一步工作：${field(project, "下一步工作")}`,
+      `- 下一节点时间：${field(project, "下一节点时间")}`,
+    );
+  });
+  lines.push("", "## 下周工作计划", "1. ", "");
+  downloadText(`${mondayReportTitle()}.md`, lines.join("\n"), "text/markdown;charset=utf-8");
+  showResult(`已导出工作小结：${projects.length} 个项目。`, "success");
+}
+
+function meetingGroupName(value) {
+  const normalized = String(value || "").trim();
+  if (normalized === "一组" || normalized === "二组") return normalized;
+  if (normalized === "丁德强团队" || normalized === "丁德强组") return "丁德强组";
+  return "未分组项目";
+}
+
+function meetingScale(project) {
+  return field(project, "建设规模")
+    || field(project, "总投资")
+    || field(project, "用地面积")
+    || field(project, "建设内容")
+    || "";
+}
+
+function exportMeetingListExcelHtml() {
+  const projects = activeExportProjects();
+  if (!projects.length) {
+    showResult("没有可导出的项目。", "error");
+    return;
+  }
+  const groups = new Map(MEETING_GROUP_ORDER.map((name) => [name, []]));
+  projects.forEach((project) => {
+    const group = meetingGroupName(field(project, "技术配合类型"));
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(project);
+  });
+  groups.forEach((rows) => rows.sort(comparePriorityThenStageThenName));
+  const tableRows = [
+    "<tr><th>项目优先级</th><th>项目名称</th><th>规模</th><th>进度</th><th>下一节点时间</th><th>预估合同额</th></tr>",
+  ];
+  MEETING_GROUP_ORDER.forEach((group) => {
+    const rows = groups.get(group) || [];
+    if (!rows.length) return;
+    tableRows.push(`<tr class="group"><td colspan="6">${escapeHtml(group)}</td></tr>`);
+    rows.forEach((project) => {
+      tableRows.push(`<tr><td>${escapeHtml(field(project, "项目优先级"))}</td><td>${escapeHtml(field(project, "项目名称"))}</td><td>${escapeHtml(meetingScale(project))}</td><td>${escapeHtml(field(project, "当前进度"))}</td><td>${escapeHtml(field(project, "下一节点时间"))}</td><td>${escapeHtml(field(project, "预估合同额"))}</td></tr>`);
+    });
+  });
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>table{border-collapse:collapse;font-family:"Microsoft YaHei",Arial,sans-serif;font-size:12px}th,td{border:1px solid #999;padding:6px 8px;vertical-align:top}th{background:#e8ddcb}.group td{background:#d6e3dc;font-weight:bold}</style></head><body><table>${tableRows.join("")}</table></body></html>`;
+  const stamp = new Date().toISOString().slice(2, 10).replace(/-/g, "");
+  downloadText(`${stamp}_部门例会项目清单.xls`, html, "application/vnd.ms-excel;charset=utf-8");
+  showResult(`已导出例会清单：${projects.length} 个项目。`, "success");
+}
+
+function downloadText(fileName, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function renderObjectTable(title, value) {
@@ -305,7 +507,9 @@ async function handleLoad() {
 }
 
 elements.loadButton.addEventListener("click", handleLoad);
-[elements.search, elements.progressFilter, elements.regionFilter, elements.technicalFilter].forEach((control) => {
+elements.exportWeeklyReportButton.addEventListener("click", exportWeeklyReportMarkdown);
+elements.exportMeetingListButton.addEventListener("click", exportMeetingListExcelHtml);
+[elements.search, elements.progressFilter, elements.regionFilter, elements.technicalFilter, elements.statusFilter, elements.sortBy].forEach((control) => {
   control.addEventListener("input", renderAll);
   control.addEventListener("change", renderAll);
 });
