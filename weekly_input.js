@@ -202,7 +202,8 @@ async function saveGitHubSettings() {
   showWeeklyResult("GitHub 保存设置已保存在当前浏览器。", "success");
   if (isGitHubSaveMode() && collectGitHubSettings().token) {
     try {
-      await loadLedgerProjects();
+      const count = await loadLedgerProjects();
+      showWeeklyResult(`GitHub 设置已保存，已加载 ${count} 个台账项目。`, count ? "success" : "error");
       await loadWeeklyFromGitHub();
     } catch (error) {
       showWeeklyResult(`GitHub 设置已保存，但读取失败：${error.message || error}`, "error");
@@ -252,9 +253,9 @@ function githubContentUrl(settings, path) {
 }
 
 async function loadLedgerProjects() {
-  if (!isGitHubSaveMode()) return;
+  if (!isGitHubSaveMode()) return state.ledgerProjects.length;
   const settings = collectGitHubSettings();
-  if (!settings.token) return;
+  if (!settings.token) throw new Error("请先填写 GitHub token，并点击“保存设置”。");
   const response = await fetch(githubContentUrl(settings, LEDGER_SNAPSHOT_PATH), { headers: githubHeaders(settings.token) });
   if (!response.ok) throw new Error(`台账快照读取失败：${await responseErrorMessage(response)}`);
   const file = await response.json();
@@ -264,6 +265,7 @@ async function loadLedgerProjects() {
     const selected = select.value;
     select.innerHTML = ledgerProjectOptions(selected);
   });
+  return state.ledgerProjects.length;
 }
 
 async function existingGitHubFileSha(settings, path) {
@@ -501,7 +503,8 @@ function addWeeklyProjectRow(row = {}, options = {}) {
 }
 
 function ledgerProjectOptions(selectedId = "") {
-  const options = ['<option value="">请选择台账项目</option>'];
+  const prompt = state.ledgerProjects.length ? "请选择台账项目" : "请先保存 GitHub 设置并加载台账";
+  const options = [`<option value="">${prompt}</option>`];
   state.ledgerProjects.forEach((project) => {
     const id = String(project.project_id || "");
     const name = String(project["项目名称"] || "");
@@ -548,6 +551,23 @@ function addLedgerWeeklyProjectRow(row = {}, options = {}) {
   selector.addEventListener("change", () => applyLedgerProject(wrapper, selector.value));
   if (selector.value) applyLedgerProject(wrapper, selector.value);
   prependWeeklyRow(elements.weeklyProjectRows, wrapper, options);
+}
+
+async function addLedgerWeeklyProjectRowWithLoad() {
+  try {
+    if (!state.ledgerProjects.length) {
+      showWeeklyResult("正在读取台账项目...", "info");
+      const count = await loadLedgerProjects();
+      if (!count) {
+        showWeeklyResult("没有读到台账项目。请先在本地台账点击“上传台账快照”，再确认 GitHub 设置里的数据仓库是 BD-weekly-data。", "error");
+        return;
+      }
+      showWeeklyResult(`已加载 ${count} 个台账项目。`, "success");
+    }
+    addLedgerWeeklyProjectRow();
+  } catch (error) {
+    showWeeklyResult(`台账项目读取失败：${error.message || error}`, "error");
+  }
 }
 
 function prependWeeklyRow(container, wrapper, options = {}) {
@@ -699,7 +719,10 @@ async function setupWeeklyInput() {
   if (isGitHubSaveMode()) {
     if (collectGitHubSettings().token) {
       try {
-        await loadLedgerProjects();
+        const count = await loadLedgerProjects();
+        if (count) {
+          showWeeklyResult(`已加载 ${count} 个台账项目。`, "success");
+        }
         await loadWeeklyFromGitHub();
       } catch (error) {
         showWeeklyResult(`GitHub 读取失败：${error.message || error}`, "error");
@@ -711,7 +734,7 @@ async function setupWeeklyInput() {
 }
 
 elements.addWeeklyVisitButton.addEventListener("click", () => addWeeklyVisitRow());
-elements.addLedgerWeeklyProjectButton.addEventListener("click", () => addLedgerWeeklyProjectRow());
+elements.addLedgerWeeklyProjectButton.addEventListener("click", addLedgerWeeklyProjectRowWithLoad);
 elements.addCustomWeeklyProjectButton.addEventListener("click", () => addCustomWeeklyProjectRow());
 elements.addWeeklyPlanButton.addEventListener("click", () => addWeeklyPlanItem());
 elements.saveGithubSettingsButton.addEventListener("click", saveGitHubSettings);

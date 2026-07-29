@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>线上项目台账</title>
+  <link rel="stylesheet" href="styles.css?v=20260727-ledger-view">
+</head>
+<body class="ledger-view-page">
+  <header class="app-topbar">
+    <div>
+      <p>Market Ledger</p>
+      <strong>线上项目台账</strong>
+    </div>
+    <span>GitHub 私有数据 · 只读查看</span>
+  </header>
+
+  <main class="ledger-view-shell">
+    <section class="ledger-view-toolbar" aria-label="GitHub 设置">
+      <div>
+        <p class="eyebrow">GitHub Data</p>
+        <h1>读取台账快照</h1>
+        <span id="snapshotSummary">填写 token 后读取 BD-weekly-data 中的台账快照。</span>
+      </div>
+      <div class="github-settings-grid">
+        <label>GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx" autocomplete="username"></label>
+        <label>数据仓库<input id="githubRepoInput" value="BD-weekly-data" autocomplete="off"></label>
+        <label>分支<input id="githubBranchInput" value="main" autocomplete="off"></label>
+        <label class="full-width">Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
+      </div>
+      <div class="ledger-view-actions">
+        <a href="index.html" class="weekly-action-link">填写周报</a>
+        <button id="loadLedgerButton" type="button">读取台账</button>
+      </div>
+      <div id="ledgerResult" class="weekly-result" aria-live="polite"></div>
+    </section>
+
+    <section class="ledger-view-main">
+      <aside class="ledger-view-list-panel">
+        <div class="ledger-view-filters">
+          <input id="projectSearch" type="search" placeholder="搜索项目名称、业主、地区" autocomplete="off">
+          <select id="progressFilter" aria-label="进度筛选">
+            <option value="">全部进度</option>
+          </select>
+          <select id="regionFilter" aria-label="地区筛选">
+            <option value="">全部地区</option>
+          </select>
+          <select id="technicalFilter" aria-label="技术配合组筛选">
+            <option value="">全部技术配合组</option>
+          </select>
+        </div>
+        <div id="projectCount" class="panel-summary">尚未读取台账。</div>
+        <div id="projectList" class="project-list ledger-view-project-list"></div>
+      </aside>
+
+      <section class="detail-panel ledger-view-detail-panel" aria-labelledby="detailTitle">
+        <header class="panel-header detail-header">
+          <div>
+            <p class="eyebrow">Project Detail</p>
+            <h2 id="detailTitle">请选择项目</h2>
+            <p id="detailSubtitle" class="panel-summary">从左侧选择项目查看台账详情。</p>
+          </div>
+        </header>
+        <div id="detailBody" class="detail-body">
+          <div class="empty-state">读取台账后，从左侧选择一个项目。</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="ledger_view.js?v=20260727-ledger-view"></script>
+</body>
+</html>

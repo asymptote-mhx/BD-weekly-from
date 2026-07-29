@@ -541,6 +541,106 @@ h3 {
   font-weight: 900;
 }
 
+.ledger-view-page {
+  height: auto;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.ledger-view-shell {
+  display: grid;
+  gap: 16px;
+  min-height: calc(100vh - 76px);
+  padding: 18px;
+}
+
+.ledger-view-toolbar {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf1;
+  box-shadow: var(--shadow-soft);
+  padding: 14px;
+}
+
+.ledger-view-toolbar h1 {
+  margin-bottom: 6px;
+}
+
+.ledger-view-toolbar span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ledger-view-actions {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(140px, 180px);
+  gap: 9px;
+}
+
+.ledger-view-main {
+  display: grid;
+  grid-template-columns: minmax(410px, 500px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 620px;
+}
+
+.ledger-view-list-panel,
+.ledger-view-detail-panel {
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.94);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.ledger-view-list-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.ledger-view-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  background: #f8f4ee;
+  padding: 12px;
+}
+
+.ledger-view-filters input {
+  grid-column: 1 / -1;
+}
+
+.ledger-view-project-list {
+  flex: 1;
+}
+
+.ledger-view-detail-panel {
+  overflow: auto;
+}
+
+.ledger-view-structured-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ledger-view-structured-list pre {
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fffdf9;
+  color: #2a3b36;
+  font: 12px/1.55 Consolas, "Microsoft YaHei UI", monospace;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
 .filters select,
 .edit-form input,
 .edit-form select,
@@ -1193,6 +1293,10 @@ h3 {
     padding: 14px;
   }
 
+  .ledger-view-main {
+    grid-template-columns: 1fr;
+  }
+
   .project-list {
     max-height: 68vh;
   }
@@ -1215,6 +1319,8 @@ h3 {
   }
 
   .filters,
+  .ledger-view-filters,
+  .ledger-view-actions,
   .detail-actions,
   .project-card,
   .project-meta {
