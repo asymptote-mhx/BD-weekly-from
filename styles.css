@@ -641,6 +641,154 @@ h3 {
   white-space: pre-wrap;
 }
 
+.ledger-visual-section {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf9;
+  padding: 12px;
+}
+
+.ledger-visual-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ledger-visual-header h4 {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.ledger-visual-header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.ledger-person-grid,
+.ledger-competitor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ledger-person-card,
+.ledger-event-card,
+.ledger-competitor-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgb(16 35 63 / 0.10);
+  border-radius: 8px;
+  background: #fff;
+  padding: 11px;
+}
+
+.ledger-person-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ledger-person-topline strong,
+.ledger-competitor-card strong {
+  color: #263834;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.ledger-person-topline span {
+  flex: 0 0 auto;
+  border: 1px solid #d7c8b4;
+  border-radius: 999px;
+  background: #f8f4eb;
+  color: #6f5a3c;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 3px 8px;
+}
+
+.ledger-person-card p,
+.ledger-event-card p,
+.ledger-competitor-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.ledger-person-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ledger-person-metrics div {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8fbff;
+  padding: 8px;
+}
+
+.ledger-person-metrics b {
+  display: block;
+  color: var(--accent-strong);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.ledger-person-metrics span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.ledger-info-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ledger-info-pill {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 5px;
+  border: 1px solid #d8d0c5;
+  border-radius: 999px;
+  background: #fffaf1;
+  color: #544b42;
+  font-size: 11px;
+  font-weight: 850;
+  padding: 4px 8px;
+}
+
+.ledger-info-pill b {
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.ledger-event-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ledger-event-card {
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: start;
+}
+
+.ledger-event-card span,
+.ledger-competitor-card span {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .filters select,
 .edit-form input,
 .edit-form select,
@@ -1304,6 +1452,8 @@ h3 {
   .detail-header,
   .metrics,
   .detail-grid,
+  .ledger-person-grid,
+  .ledger-competitor-grid,
   .edit-form,
   .danger-actions,
   .export-actions {
@@ -1321,6 +1471,7 @@ h3 {
   .filters,
   .ledger-view-filters,
   .ledger-view-actions,
+  .ledger-event-card,
   .detail-actions,
   .project-card,
   .project-meta {
