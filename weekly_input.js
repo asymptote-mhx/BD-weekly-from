@@ -252,6 +252,11 @@ function githubContentUrl(settings, path) {
   return `https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${path}?ref=${encodeURIComponent(settings.branch)}`;
 }
 
+function isActiveLedgerProject(project) {
+  const status = String(project?.["记录状态"] || "").trim();
+  return !status || status === "正常";
+}
+
 async function loadLedgerProjects() {
   if (!isGitHubSaveMode()) return state.ledgerProjects.length;
   const settings = collectGitHubSettings();
@@ -260,7 +265,7 @@ async function loadLedgerProjects() {
   if (!response.ok) throw new Error(`台账快照读取失败：${await responseErrorMessage(response)}`);
   const file = await response.json();
   const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
-  state.ledgerProjects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
+  state.ledgerProjects = Array.isArray(snapshot.projects) ? snapshot.projects.filter(isActiveLedgerProject) : [];
   document.querySelectorAll("[data-ledger-project]").forEach((select) => {
     const selected = select.value;
     select.innerHTML = ledgerProjectOptions(selected);

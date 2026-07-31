@@ -154,7 +154,7 @@ async function loadLedgerSnapshot() {
   }
   const file = await response.json();
   const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
-  state.projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
+  state.projects = Array.isArray(snapshot.projects) ? snapshot.projects.filter(isActiveProject) : [];
   state.details = snapshot.project_details && typeof snapshot.project_details === "object" ? snapshot.project_details : {};
   state.generatedAt = snapshot.generated_at || "";
   state.selectedProjectId = state.projects[0]?.project_id || "";
@@ -166,6 +166,10 @@ function field(project, key) {
 
 function recordStatus(project) {
   return field(project, "记录状态") || "正常";
+}
+
+function isActiveProject(project) {
+  return recordStatus(project) === "正常";
 }
 
 function uniqueOptions(key) {
@@ -335,6 +339,116 @@ function section(title, body) {
   return `<section class="chain-section"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(content)}</p></section>`;
 }
 
+function meaningfulValue(value) {
+  return String(value || "").trim();
+}
+
+function meaningfulStructuredRow(row, ignoredFields = []) {
+  const ignored = new Set(["item_id", "project_id", "排序", ...ignoredFields]);
+  return row && Object.entries(row).some(([key, value]) => !ignored.has(key) && meaningfulValue(value));
+}
+
+function contactCount(row) {
+  const raw = meaningfulValue(row["接触次数"]);
+  if (!raw) return "0";
+  return raw;
+}
+
+function formatDateTime(value) {
+  const text = meaningfulValue(value);
+  if (!text) return "";
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function renderInfoPill(label, value) {
+  const text = meaningfulValue(value);
+  if (!text) return "";
+  return `<span class="ledger-info-pill"><b>${escapeHtml(label)}</b>${escapeHtml(text)}</span>`;
+}
+
+function renderPeopleCards(title, rows) {
+  const people = rows.filter((row) => meaningfulStructuredRow(row, ["链条类型"]));
+  if (!people.length) return "";
+  const totalContacts = people.reduce((sum, row) => sum + (Number.parseInt(contactCount(row), 10) || 0), 0);
+  const decisionCount = people.filter((row) => meaningfulValue(row["权重"]).includes("决策")).length;
+  return `
+    <section class="ledger-visual-section">
+      <div class="ledger-visual-header">
+        <h4>${escapeHtml(title)}</h4>
+        <span>${people.length} 人 · 接触 ${totalContacts} 次 · 关键 ${decisionCount} 人</span>
+      </div>
+      <div class="ledger-person-grid">
+        ${people.map((row) => {
+          const name = meaningfulValue(row["姓名"]) || "未填姓名";
+          const meta = [row["单位"], row["职务"]].map(meaningfulValue).filter(Boolean).join(" · ");
+          return `
+            <article class="ledger-person-card">
+              <div class="ledger-person-topline">
+                <strong>${escapeHtml(name)}</strong>
+                <span>${escapeHtml(meaningfulValue(row["权重"]) || "未标权重")}</span>
+              </div>
+              <p>${escapeHtml(meta || "未填单位/职务")}</p>
+              <div class="ledger-person-metrics">
+                <div><b>${escapeHtml(contactCount(row))}</b><span>接触次数</span></div>
+                <div><b>${escapeHtml(formatDateTime(row["最近更新时间"]) || "未填")}</b><span>最近更新</span></div>
+              </div>
+              <div class="ledger-info-pills">
+                ${renderInfoPill("电话", row["电话"])}
+                ${renderInfoPill("备注", row["备注"])}
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderMarketingCards(rows) {
+  const events = rows.filter((row) => meaningfulStructuredRow(row));
+  if (!events.length) return "";
+  return `
+    <section class="ledger-visual-section">
+      <div class="ledger-visual-header">
+        <h4>营销大事纪</h4>
+        <span>${events.length} 条记录</span>
+      </div>
+      <div class="ledger-event-list">
+        ${events.map((row, index) => `
+          <article class="ledger-event-card">
+            <span>${escapeHtml(meaningfulValue(row["日期"]) || `记录 ${index + 1}`)}</span>
+            <p>${escapeHtml(meaningfulValue(row["内容"]) || "未填内容")}</p>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderCompetitorCards(rows) {
+  const competitors = rows.filter((row) => meaningfulStructuredRow(row));
+  if (!competitors.length) return "";
+  return `
+    <section class="ledger-visual-section">
+      <div class="ledger-visual-header">
+        <h4>竞争态势</h4>
+        <span>${competitors.length} 个对手/关系</span>
+      </div>
+      <div class="ledger-competitor-grid">
+        ${competitors.map((row) => `
+          <article class="ledger-competitor-card">
+            <strong>${escapeHtml(meaningfulValue(row["竞争对手"]) || "未填竞争对手")}</strong>
+            <p>${escapeHtml(meaningfulValue(row["条线关系"]) || "未填条线关系")}</p>
+            ${meaningfulValue(row["备注"]) ? `<span>${escapeHtml(row["备注"])}</span>` : ""}
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function mondayReportTitle(date = new Date()) {
   const monday = new Date(date);
   const day = monday.getDay() || 7;
@@ -438,17 +552,19 @@ function downloadText(fileName, content, type) {
 
 function renderObjectTable(title, value) {
   if (!value || typeof value !== "object") return "";
-  const rows = Array.isArray(value) ? value : Object.entries(value).map(([key, item]) => ({ 名称: key, 内容: item }));
-  const meaningful = rows.filter((row) => row && Object.values(row).some(Boolean));
-  if (!meaningful.length) return "";
-  return `
-    <section class="chain-section">
-      <h4>${escapeHtml(title)}</h4>
-      <div class="ledger-view-structured-list">
-        ${meaningful.map((row) => `<pre>${escapeHtml(JSON.stringify(row, null, 2))}</pre>`).join("")}
-      </div>
-    </section>
-  `;
+  const people = Array.isArray(value.chain_people) ? value.chain_people : [];
+  const decisionPeople = people.filter((row) => row["链条类型"] !== "操作链条");
+  const operationPeople = people.filter((row) => row["链条类型"] === "操作链条");
+  const marketingEvents = Array.isArray(value.marketing_events) ? value.marketing_events : [];
+  const competitors = Array.isArray(value.competitors) ? value.competitors : [];
+  const content = [
+    renderPeopleCards("业主决策链条", decisionPeople),
+    renderPeopleCards("操作链条", operationPeople),
+    renderMarketingCards(marketingEvents),
+    renderCompetitorCards(competitors),
+  ].filter(Boolean).join("");
+  if (content) return content;
+  return section(title, "暂无结构化详情。");
 }
 
 function renderProjectDetail() {

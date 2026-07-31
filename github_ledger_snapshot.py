@@ -15,9 +15,19 @@ LEDGER_SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json"
 Opener = Callable[[Request], Any]
 
 
+def _is_active_project(project: dict[str, object]) -> bool:
+    status = str(project.get("记录状态", "") or "").strip()
+    return status in {"", "正常"}
+
+
 def build_ledger_snapshot(store: ExcelStore) -> dict[str, object]:
     """Create the private GitHub representation of the local workbook."""
-    projects = store.list_projects()
+    projects = [project for project in store.list_projects() if _is_active_project(project)]
+    active_project_ids = {
+        str(project.get("project_id", "")).strip()
+        for project in projects
+        if str(project.get("project_id", "")).strip()
+    }
     project_details: dict[str, dict[str, object]] = {}
     for project in projects:
         project_id = str(project.get("project_id", "")).strip()
@@ -34,7 +44,11 @@ def build_ledger_snapshot(store: ExcelStore) -> dict[str, object]:
         "projects": projects,
         "project_details": project_details,
         "weekly_imports": store.list_weekly_imports(),
-        "progress_records": store.list_progress_records(),
+        "progress_records": [
+            record
+            for record in store.list_progress_records()
+            if str(record.get("project_id", "")).strip() in active_project_ids
+        ],
     }
 
 
