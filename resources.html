@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>线上平台公司资源库</title>
+  <link rel="stylesheet" href="styles.css?v=20260806-online-resources-sync">
+</head>
+<body class="ledger-view-page">
+  <header class="app-topbar">
+    <div><p>Market Resources</p><strong>线上平台公司资源库</strong></div>
+    <span>GitHub 私有数据 · 只读查看</span>
+  </header>
+  <main class="ledger-view-shell">
+    <section class="ledger-view-toolbar">
+      <div>
+        <p class="eyebrow">PLATFORM LIBRARY</p>
+        <h1>平台公司与决策链</h1>
+        <span id="resourceSummary">填写 GitHub Token 后读取最新台账快照。</span>
+      </div>
+      <div class="github-settings-grid">
+        <label>GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx"></label>
+        <label>数据仓库<input id="githubRepoInput" value="BD-weekly-data"></label>
+        <label>分支<input id="githubBranchInput" value="main"></label>
+        <label class="full-width">Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
+      </div>
+      <div class="ledger-view-actions">
+        <a href="ledger.html" class="weekly-action-link">项目台账</a>
+        <a href="index.html" class="weekly-action-link">填写周报</a>
+        <button id="loadResourcesButton">读取资源库</button>
+      </div>
+      <div id="resourceResult" class="weekly-result" aria-live="polite"></div>
+    </section>
+    <section class="online-resource-layout">
+      <aside class="online-resource-list">
+        <input id="companySearch" type="search" placeholder="搜索平台公司、分类或地区">
+        <div id="companyList"><p class="muted">尚未读取资源库。</p></div>
+      </aside>
+      <section id="companyDetail" class="online-resource-detail"><div class="empty-state">读取后选择平台公司。</div></section>
+    </section>
+  </main>
+  <script src="resources_view.js?v=20260806-online-resources-sync"></script>
+</body>
+</html>

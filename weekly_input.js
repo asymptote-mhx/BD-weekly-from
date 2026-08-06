@@ -18,7 +18,10 @@ const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程",
 const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-plan-project";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 const LEDGER_SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
-const state = { ledgerProjects: [] };
+const state = {
+  ledgerProjects: [],
+  platformResources: { platform_companies: [], platform_chain_people: [], project_platform_links: [] },
+};
 
 const elements = {
   weeklyInputPanel: document.getElementById("weeklyInputPanel"),
@@ -27,6 +30,7 @@ const elements = {
   weeklyProjectRows: document.getElementById("weeklyProjectRows"),
   weeklyPlanRows: document.getElementById("weeklyPlanRows"),
   addWeeklyVisitButton: document.getElementById("addWeeklyVisitButton"),
+  refreshWeeklyResourcesButton: document.getElementById("refreshWeeklyResourcesButton"),
   addLedgerWeeklyProjectButton: document.getElementById("addLedgerWeeklyProjectButton"),
   addCustomWeeklyProjectButton: document.getElementById("addCustomWeeklyProjectButton"),
   addWeeklyPlanButton: document.getElementById("addWeeklyPlanButton"),
@@ -118,20 +122,8 @@ function weeklyFormPayloadToMarkdown(payload) {
     "",
     `# ${title}`,
     "",
-    "## 主要拜访人员",
+    "## 本周项目推进",
   ];
-
-  const visits = Array.isArray(payload.visits) ? payload.visits : [];
-  const meaningfulVisits = visits.filter((visit) => Object.values(visit).some(Boolean));
-  if (meaningfulVisits.length) {
-    meaningfulVisits.forEach((visit) => {
-      lines.push(`- 单位：${visit.unit || ""}；姓名：${visit.name || ""}；职务：${visit.position || ""}；对应项目：${visit.project || ""}；`);
-    });
-  } else {
-    lines.push("- 单位：；姓名：；职务：；对应项目：；");
-  }
-
-  lines.push("", "## 项目跟进情况");
   const projects = Array.isArray(payload.projects) ? payload.projects : [];
   projects.forEach((project) => {
     if (!project.name) return;
@@ -155,6 +147,16 @@ function weeklyFormPayloadToMarkdown(payload) {
       lines.push(`- ${label}：${value || ""}`);
     });
   });
+  lines.push("", "## 本周拜访与沟通");
+  const visits = Array.isArray(payload.visits) ? payload.visits : [];
+  const meaningfulVisits = visits.filter((visit) => Object.values(visit).some((value) => Array.isArray(value) ? value.length : Boolean(value)));
+  if (meaningfulVisits.length) {
+    meaningfulVisits.forEach((visit) => {
+      lines.push(`- 接触日期：${visit.contact_date || ""}；平台公司ID：${visit.platform_company_id || ""}；平台公司：${visit.unit || ""}；接触对象：${visit.contact_people || visit.name || ""}；参与拜访人员：${visit.participants || ""}；接触方式：${visit.contact_method || ""}；对应项目：${visit.project || ""}；沟通内容：${visit.discussion || ""}；项目影响：${visit.project_impact || ""}；下一步行动：${visit.next_action || ""}；下一步日期：${visit.next_action_date || ""}；是否有效拜访：${visit.is_effective || ""}；`);
+    });
+  } else {
+    lines.push("- 接触日期：；平台公司：；接触对象：；参与拜访人员：；接触方式：；对应项目：；沟通内容：；项目影响：；下一步行动：；下一步日期：；");
+  }
   lines.push("", "## 下周工作计划");
   const planItems = Array.isArray(payload.next_week_plan) ? payload.next_week_plan.map(formatWeeklyPlanItem).filter(Boolean) : [];
   if (planItems.length) {
@@ -205,6 +207,7 @@ async function saveGitHubSettings() {
       const count = await loadLedgerProjects();
       showWeeklyResult(`GitHub 设置已保存，已加载 ${count} 个台账项目。`, count ? "success" : "error");
       await loadWeeklyFromGitHub();
+      if (!elements.weeklyVisitRows.children.length) addWeeklyVisitRow();
     } catch (error) {
       showWeeklyResult(`GitHub 设置已保存，但读取失败：${error.message || error}`, "error");
     }
@@ -266,11 +269,34 @@ async function loadLedgerProjects() {
   const file = await response.json();
   const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
   state.ledgerProjects = Array.isArray(snapshot.projects) ? snapshot.projects.filter(isActiveLedgerProject) : [];
+  state.platformResources = snapshot.platform_resources || state.platformResources;
   document.querySelectorAll("[data-ledger-project]").forEach((select) => {
     const selected = select.value;
     select.innerHTML = ledgerProjectOptions(selected);
   });
   return state.ledgerProjects.length;
+}
+
+let weeklyResourceRefreshInFlight = false;
+async function refreshWeeklyResources(options = {}) {
+  if (weeklyResourceRefreshInFlight) return;
+  if (!collectGitHubSettings().token) {
+    if (!options.silent) showWeeklyResult("请先填写 GitHub token 并保存设置，再刷新资源库。", "info");
+    return;
+  }
+  weeklyResourceRefreshInFlight = true;
+  const button = elements.refreshWeeklyResourcesButton;
+  if (button) { button.disabled = true; button.textContent = "正在刷新..."; }
+  try {
+    await loadLedgerProjects();
+    refreshVisitResourceSelectors();
+    if (!options.silent) showWeeklyResult(`资源库已刷新：${platformCompanies().length} 家平台公司、${state.ledgerProjects.length} 个正常项目。`, "success");
+  } catch (error) {
+    if (!options.silent) showWeeklyResult(`资源库刷新失败：${error.message || error}`, "error");
+  } finally {
+    weeklyResourceRefreshInFlight = false;
+    if (button) { button.disabled = false; button.textContent = "刷新资源库"; }
+  }
 }
 
 async function existingGitHubFileSha(settings, path) {
@@ -371,9 +397,20 @@ function parseVisitLine(line) {
     .forEach((part) => {
       const [label, value] = parseKeyValueLine(part);
       if (label === "单位") visit.unit = value;
+      if (label === "平台公司") visit.unit = value;
+      if (label === "平台公司ID") visit.platform_company_id = value;
       if (label === "姓名") visit.name = value;
+      if (label === "接触对象") visit.contact_people = value;
       if (label === "职务") visit.position = value;
       if (label === "对应项目") visit.project = value;
+      if (label === "接触日期") visit.contact_date = value;
+      if (label === "参与拜访人员") visit.participants = value;
+      if (label === "接触方式") visit.contact_method = value;
+      if (label === "沟通内容") visit.discussion = value;
+      if (label === "项目影响") visit.project_impact = value;
+      if (label === "下一步行动") visit.next_action = value;
+      if (label === "下一步日期") visit.next_action_date = value;
+      if (label === "是否有效拜访") visit.is_effective = value;
     });
   return visit;
 }
@@ -411,14 +448,14 @@ function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
     projects: [],
     next_week_plan: [],
   };
-  const visitsText = markdownSection(markdown, "主要拜访人员");
+  const visitsText = markdownSection(markdown, "本周拜访与沟通") || markdownSection(markdown, "主要拜访人员");
   payload.visits = visitsText
     .split("\n")
     .filter((line) => line.trim().startsWith("-"))
     .map(parseVisitLine)
     .filter((visit) => Object.values(visit).some(Boolean));
 
-  const projectsText = markdownSection(markdown, "项目跟进情况");
+  const projectsText = markdownSection(markdown, "本周项目推进") || markdownSection(markdown, "项目跟进情况");
   payload.projects = projectsText
     .split(/\n###\s+/)
     .map((block) => block.replace(/^###\s+/, "").trim())
@@ -462,16 +499,85 @@ async function responseErrorMessage(response) {
   }
 }
 
+function platformCompanies() { return state.platformResources.platform_companies || []; }
+function companyPeople(companyId) { return (state.platformResources.platform_chain_people || []).filter((row) => String(row.platform_company_id || "") === companyId); }
+function companyProjects(companyId) {
+  const ids = new Set((state.platformResources.project_platform_links || []).filter((row) => String(row.platform_company_id || "") === companyId).map((row) => String(row.project_id || "")));
+  return state.ledgerProjects.filter((project) => ids.has(String(project.project_id || "")));
+}
+function splitSelections(value) { return String(value || "").split(/[、,，|]/).map((item) => item.trim()).filter(Boolean); }
+function companyOptions(selectedId = "", fallbackName = "") {
+  const rows = platformCompanies().map((company) => `<option value="${escapeHtml(company.platform_company_id || "")}"${company.platform_company_id === selectedId ? " selected" : ""}>${escapeHtml(company["平台公司名称"] || "未命名平台")}</option>`);
+  if (fallbackName && !selectedId) rows.unshift(`<option value="" selected>${escapeHtml(fallbackName)}（旧记录，待关联资源库）</option>`);
+  return `<option value="">选择平台公司</option>${rows.join("")}`;
+}
+function dependentVisitOptions(row, companyId) {
+  const selectedPeople = new Set(splitSelections(row.contact_people || row.name));
+  const selectedPersonIds = new Set(splitSelections(row.contact_person_ids));
+  const people = companyPeople(companyId).map((person) => {
+    const value = person.item_id || person["姓名"] || "";
+    const label = person["姓名"] || "姓名待补充";
+    const checked = selectedPersonIds.has(person.item_id) || selectedPeople.has(person["姓名"]);
+    return `<label class="visit-choice"><input type="checkbox" value="${escapeHtml(value)}" data-choice-label="${escapeHtml(label)}"${checked ? " checked" : ""}><span><strong>${escapeHtml(label)}</strong>${person["决策角色"] ? `<small>${escapeHtml(person["决策角色"])}</small>` : ""}</span></label>`;
+  }).join("");
+  const selectedProjects = new Set(splitSelections(row.project));
+  const selectedProjectIds = new Set(splitSelections(row.project_ids));
+  const projects = companyProjects(companyId).map((project) => {
+    const value = project.project_id || "";
+    const label = project["项目名称"] || "未命名项目";
+    const checked = selectedProjectIds.has(project.project_id) || selectedProjects.has(project["项目名称"]);
+    return `<label class="visit-choice"><input type="checkbox" value="${escapeHtml(value)}" data-choice-label="${escapeHtml(label)}"${checked ? " checked" : ""}><span><strong>${escapeHtml(label)}</strong></span></label>`;
+  }).join("");
+  return { people, projects };
+}
+function refreshVisitDependencies(wrapper, row = {}) {
+  const companyId = wrapper.querySelector('[data-weekly-field="platform_company_id"]').value;
+  const options = dependentVisitOptions(row, companyId);
+  wrapper.querySelector("[data-visit-people]").innerHTML = options.people || `<span class="visit-choice-empty">${companyId ? "该公司尚未录入决策链人员" : "请先选择平台公司"}</span>`;
+  wrapper.querySelector("[data-visit-projects]").innerHTML = options.projects || `<span class="visit-choice-empty">${companyId ? "该公司尚未关联项目" : "请先选择平台公司"}</span>`;
+}
+function visitResourceSnapshot(wrapper) {
+  const companyId = wrapper.querySelector('[data-weekly-field="platform_company_id"]')?.value || "";
+  const people = [...wrapper.querySelectorAll("[data-visit-people] input:checked")];
+  const projects = [...wrapper.querySelectorAll("[data-visit-projects] input:checked")];
+  return {
+    platform_company_id: companyId,
+    unit: platformCompanies().find((company) => company.platform_company_id === companyId)?.["平台公司名称"] || wrapper.dataset.fallbackUnit || "",
+    contact_person_ids: people.map((option) => option.value).join("、"),
+    contact_people: people.map((option) => option.dataset.choiceLabel || "").join("、") || wrapper.dataset.fallbackPeople || "",
+    project_ids: projects.map((option) => option.value).join("、"),
+    project: projects.map((option) => option.dataset.choiceLabel || "").join("、") || wrapper.dataset.fallbackProjects || "",
+  };
+}
+function refreshVisitResourceSelectors() {
+  [...elements.weeklyVisitRows.querySelectorAll(".weekly-visit-card")].forEach((wrapper) => {
+    const snapshot = visitResourceSnapshot(wrapper);
+    const companySelect = wrapper.querySelector('[data-weekly-field="platform_company_id"]');
+    companySelect.innerHTML = companyOptions(snapshot.platform_company_id, snapshot.unit);
+    refreshVisitDependencies(wrapper, snapshot);
+  });
+}
 function addWeeklyVisitRow(row = {}) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "weekly-row weekly-visit-row";
-  wrapper.innerHTML = `
-    <input data-weekly-field="unit" placeholder="单位" value="${escapeHtml(row.unit || "")}">
-    <input data-weekly-field="name" placeholder="姓名" value="${escapeHtml(row.name || "")}">
-    <input data-weekly-field="position" placeholder="职务" value="${escapeHtml(row.position || "")}">
-    <input data-weekly-field="project" placeholder="对应项目" value="${escapeHtml(row.project || "")}">
-    <button type="button" data-remove-weekly-row>删除</button>
-  `;
+  const wrapper = document.createElement("section");
+  wrapper.className = "weekly-visit-card";
+  wrapper.dataset.fallbackUnit = row.unit || "";
+  wrapper.dataset.fallbackPeople = row.contact_people || row.name || "";
+  wrapper.dataset.fallbackProjects = row.project || "";
+  wrapper.innerHTML = `<div class="weekly-visit-grid">
+    <label>接触日期<input data-weekly-field="contact_date" type="date" value="${escapeHtml(row.contact_date || todayText())}"></label>
+    <label>平台公司<select data-weekly-field="platform_company_id">${companyOptions(row.platform_company_id || "", row.unit || "")}</select></label>
+    <label>接触方式<select data-weekly-field="contact_method"><option value="">请选择</option>${["简单拜访","项目汇报","商务宴请","线上交流","陪同考察"].map((value) => `<option${row.contact_method === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
+    <label>参与拜访人员<input data-weekly-field="participants" placeholder="填写UAD内部参与人员，支持多人" value="${escapeHtml(row.participants || "")}"></label>
+    <div class="visit-multi"><span class="visit-multi-title">接触对象（可多选）</span><div class="visit-choice-list" data-visit-people role="group" aria-label="接触对象"></div><small>直接勾选该平台公司的决策链人员</small></div>
+    <div class="visit-multi"><span class="visit-multi-title">讨论项目（可多选）</span><div class="visit-choice-list" data-visit-projects role="group" aria-label="讨论项目"></div><small>直接勾选该平台公司已关联项目</small></div>
+    <label class="full-width">沟通内容<textarea data-weekly-field="discussion" rows="3" placeholder="讨论了什么、获得了哪些关键信息">${escapeHtml(row.discussion || "")}</textarea></label>
+    <label class="full-width">对项目的影响<textarea data-weekly-field="project_impact" rows="2" placeholder="对项目判断、阶段或决策产生了什么影响">${escapeHtml(row.project_impact || "")}</textarea></label>
+    <label class="full-width">下一步行动<textarea data-weekly-field="next_action" rows="2">${escapeHtml(row.next_action || "")}</textarea></label>
+    <label>下一步日期<input data-weekly-field="next_action_date" type="date" value="${escapeHtml(row.next_action_date || "")}"></label>
+  </div><button class="remove-weekly-project" type="button" data-remove-weekly-row>删除拜访记录</button>`;
+  const companySelect = wrapper.querySelector('[data-weekly-field="platform_company_id"]');
+  companySelect.addEventListener("change", () => refreshVisitDependencies(wrapper));
+  refreshVisitDependencies(wrapper, row);
   prependWeeklyRow(elements.weeklyVisitRows, wrapper);
 }
 
@@ -480,6 +586,7 @@ function addCustomWeeklyProjectRow(row = {}, options = {}) {
   wrapper.className = "weekly-project-row";
   wrapper.dataset.weeklyMode = "custom";
   wrapper.innerHTML = `
+    <div class="weekly-project-card-heading"><strong data-weekly-project-number>项目</strong><span>自填项目</span></div>
     <div class="weekly-project-grid">
       <label>项目名称<input data-weekly-field="name" placeholder="项目名称" value="${escapeHtml(row.name || "")}"></label>
       <label>业主单位<input data-weekly-field="owner_org" placeholder="业主单位" value="${escapeHtml(row.owner_org || "")}"></label>
@@ -537,6 +644,7 @@ function addLedgerWeeklyProjectRow(row = {}, options = {}) {
   wrapper.className = "weekly-project-row";
   wrapper.dataset.weeklyMode = "ledger";
   wrapper.innerHTML = `
+    <div class="weekly-project-card-heading"><strong data-weekly-project-number>项目</strong><span>台账项目</span></div>
     <div class="weekly-project-grid" data-weekly-mode="ledger">
       <label class="full-width">台账项目<select data-ledger-project>${ledgerProjectOptions(row.project_id || "")}</select></label>
       <label>项目名称<input data-weekly-field="name" readonly value="${escapeHtml(row.name || "")}"></label>
@@ -578,10 +686,12 @@ async function addLedgerWeeklyProjectRowWithLoad() {
 function prependWeeklyRow(container, wrapper, options = {}) {
   if (options.append) {
     container.appendChild(wrapper);
+    if (container === elements.weeklyProjectRows) renumberWeeklyProjectRows();
     return;
   }
   if (container === elements.weeklyProjectRows) {
     elements.weeklyProjectRows.prepend(wrapper);
+    renumberWeeklyProjectRows();
     return;
   }
   if (container === elements.weeklyPlanRows) {
@@ -589,6 +699,13 @@ function prependWeeklyRow(container, wrapper, options = {}) {
     return;
   }
   container.prepend(wrapper);
+}
+
+function renumberWeeklyProjectRows() {
+  [...elements.weeklyProjectRows.querySelectorAll(".weekly-project-row")].forEach((row, index) => {
+    const label = row.querySelector("[data-weekly-project-number]");
+    if (label) label.textContent = `项目 ${index + 1}`;
+  });
 }
 
 function renderWeeklyPayload(payload) {
@@ -658,12 +775,36 @@ function collectWeeklyRows(container) {
   }).filter((row) => Object.values(row).some((value) => Array.isArray(value) ? value.length : Boolean(value)));
 }
 
+function selectedOptionData(select) {
+  const options = [...select.selectedOptions].filter((option) => !option.disabled && option.value);
+  return { ids: options.map((option) => option.value), names: options.map((option) => option.textContent.split("｜")[0].trim()) };
+}
+
+function collectWeeklyVisits() {
+  return [...elements.weeklyVisitRows.querySelectorAll(".weekly-visit-card")].map((row) => {
+    const values = {};
+    row.querySelectorAll("[data-weekly-field]").forEach((input) => { values[input.dataset.weeklyField] = input.value.trim(); });
+    const company = platformCompanies().find((item) => String(item.platform_company_id || "") === values.platform_company_id);
+    const people = selectedOptionData(row.querySelector("[data-visit-people]"));
+    const projects = selectedOptionData(row.querySelector("[data-visit-projects]"));
+    values.unit = company?.["平台公司名称"] || row.dataset.fallbackUnit || "";
+    values.contact_person_ids = people.ids.join("、");
+    values.contact_people = people.names.join("、") || row.dataset.fallbackPeople || "";
+    values.project_ids = projects.ids.join("、");
+    values.project = projects.names.join("、") || row.dataset.fallbackProjects || "";
+    const meaningful = [values.platform_company_id, values.unit, values.contact_people, values.participants, values.project, values.contact_method, values.discussion, values.project_impact, values.next_action].some(Boolean);
+    if (!meaningful) return null;
+    values.is_effective = values.platform_company_id && values.contact_people && values.participants && values.project && values.contact_method && (values.discussion || values.project_impact) && values.next_action ? "是" : "否";
+    return values;
+  }).filter(Boolean);
+}
+
 function collectWeeklyForm(status = "draft") {
   return {
     title: elements.weeklyTitleInput.value.trim() || mondayReportTitle(),
     status,
     import_now: false,
-    visits: collectWeeklyRows(elements.weeklyVisitRows),
+    visits: collectWeeklyVisits(),
     projects: collectWeeklyRows(elements.weeklyProjectRows),
     next_week_plan: [...elements.weeklyPlanRows.querySelectorAll(".weekly-plan-row")]
       .map((row) => ({
@@ -685,12 +826,20 @@ function validateWeeklyProjectRows(status) {
   return false;
 }
 
+function validateWeeklyVisits(status) {
+  if (status !== "completed") return true;
+  const incomplete = collectWeeklyVisits().find((visit) => visit.is_effective !== "是");
+  if (!incomplete) return true;
+  showWeeklyResult("拜访记录尚不完整：请选择平台公司、接触对象、讨论项目和接触方式，并填写参与人员、沟通结果及下一步行动。", "error");
+  return false;
+}
+
 async function saveWeeklyForm(status = "draft") {
   const button = status === "completed" ? elements.completeWeeklyButton : elements.saveWeeklyDraftButton;
   button.disabled = true;
   showWeeklyResult(status === "completed" ? "正在保存完成稿..." : "正在暂存草稿...", "info");
   try {
-    if (!validateWeeklyProjectRows(status)) return;
+    if (!validateWeeklyProjectRows(status) || !validateWeeklyVisits(status)) return;
     const payload = collectWeeklyForm(status);
     if (isGitHubSaveMode()) {
       const data = await saveWeeklyToGitHub(payload);
@@ -718,7 +867,6 @@ async function saveWeeklyForm(status = "draft") {
 async function setupWeeklyInput() {
   loadGitHubSettings();
   elements.weeklyTitleInput.value = mondayReportTitle();
-  addWeeklyVisitRow();
   addLedgerWeeklyProjectRow();
   addWeeklyPlanItem();
   if (isGitHubSaveMode()) {
@@ -729,16 +877,20 @@ async function setupWeeklyInput() {
           showWeeklyResult(`已加载 ${count} 个台账项目。`, "success");
         }
         await loadWeeklyFromGitHub();
+        if (!elements.weeklyVisitRows.children.length) addWeeklyVisitRow();
       } catch (error) {
         showWeeklyResult(`GitHub 读取失败：${error.message || error}`, "error");
+        addWeeklyVisitRow();
       }
     } else {
+      addWeeklyVisitRow();
       showWeeklyResult("当前为 GitHub 保存模式。第一次使用请填写 token 并保存设置。", "info");
     }
   }
 }
 
 elements.addWeeklyVisitButton.addEventListener("click", () => addWeeklyVisitRow());
+elements.refreshWeeklyResourcesButton.addEventListener("click", () => refreshWeeklyResources());
 elements.addLedgerWeeklyProjectButton.addEventListener("click", addLedgerWeeklyProjectRowWithLoad);
 elements.addCustomWeeklyProjectButton.addEventListener("click", () => addCustomWeeklyProjectRow());
 elements.addWeeklyPlanButton.addEventListener("click", () => addWeeklyPlanItem());
@@ -769,7 +921,12 @@ elements.weeklyInputPanel.addEventListener("click", (event) => {
   }
   const button = event.target.closest("[data-remove-weekly-row]");
   if (!button) return;
-  button.closest(".weekly-row, .weekly-project-row")?.remove();
+  button.closest(".weekly-row, .weekly-project-row, .weekly-visit-card")?.remove();
+  renumberWeeklyProjectRows();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshWeeklyResources({ silent: true });
 });
 
 window.addEventListener("error", (event) => {

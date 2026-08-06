@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>填写本周小结</title>
-  <link rel="stylesheet" href="styles.css?v=20260704-plan-project">
+  <link rel="stylesheet" href="styles.css?v=20260806-visit-checkboxes-ui2">
 </head>
 <body class="weekly-input-page">
   <header class="app-topbar">
@@ -24,6 +24,7 @@
           <span>标题会按本周周一自动生成，可直接保存为草稿，确认无误后再标记完成。</span>
         </div>
         <a href="ledger.html" class="weekly-action-link">查看线上台账</a>
+        <a href="resources.html" class="weekly-action-link">平台资源库</a>
       </div>
 
       <label class="weekly-title-label">周报标题<input id="weeklyTitleInput" autocomplete="off"></label>
@@ -53,19 +54,21 @@
 
       <section class="weekly-form-section">
         <div class="structured-header">
-          <h2>主要拜访人员</h2>
-          <button id="addWeeklyVisitButton" type="button">新增拜访人员</button>
-        </div>
-        <div id="weeklyVisitRows" class="weekly-rows"></div>
-      </section>
-
-      <section class="weekly-form-section">
-        <div class="structured-header">
-          <h2>项目跟进情况</h2>
+          <div><h2>本周项目推进</h2><p>从台账选择项目，只填写本周发生的变化。</p></div>
           <button id="addLedgerWeeklyProjectButton" type="button">从台账选择项目</button>
           <button id="addCustomWeeklyProjectButton" type="button">新增自填项目</button>
         </div>
         <div id="weeklyProjectRows" class="weekly-rows"></div>
+      </section>
+
+      <section class="weekly-form-section">
+        <div class="structured-header">
+          <div><h2>本周拜访与沟通</h2><p>平台公司、接触对象和项目直接调用公司资源库。</p></div>
+          <a id="newPlatformCompanyLink" class="weekly-action-link" href="resources.html" target="_blank" rel="noopener">新增平台公司</a>
+          <button id="refreshWeeklyResourcesButton" type="button">刷新资源库</button>
+          <button id="addWeeklyVisitButton" type="button">新增拜访记录</button>
+        </div>
+        <div id="weeklyVisitRows" class="weekly-rows"></div>
       </section>
 
       <section class="weekly-form-section">
@@ -78,6 +81,6 @@
     </section>
   </main>
 
-  <script src="weekly_input.js?v=20260722-ledger-snapshot"></script>
+  <script src="weekly_input.js?v=20260806-visit-checkboxes-ui2"></script>
 </body>
 </html>
