@@ -775,9 +775,15 @@ function collectWeeklyRows(container) {
   }).filter((row) => Object.values(row).some((value) => Array.isArray(value) ? value.length : Boolean(value)));
 }
 
-function selectedOptionData(select) {
-  const options = [...select.selectedOptions].filter((option) => !option.disabled && option.value);
-  return { ids: options.map((option) => option.value), names: options.map((option) => option.textContent.split("｜")[0].trim()) };
+function selectedOptionData(control) {
+  if (!control) return { ids: [], names: [] };
+  const options = control.selectedOptions
+    ? Array.from(control.selectedOptions).filter((option) => !option.disabled && option.value)
+    : Array.from(control.querySelectorAll('input[type="checkbox"]:checked')).filter((option) => !option.disabled && option.value);
+  return {
+    ids: options.map((option) => option.value),
+    names: options.map((option) => option.dataset.choiceLabel || option.textContent?.split("｜")[0].trim() || ""),
+  };
 }
 
 function collectWeeklyVisits() {
