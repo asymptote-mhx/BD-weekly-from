@@ -110,6 +110,10 @@ function cleanWorkItem(value) {
   return String(value || "").trim().replace(/[。；; ]+$/g, "");
 }
 
+function weeklyMarkdownValue(value) {
+  return String(value || "").replace(/\r\n?/g, "\n  ");
+}
+
 function weeklyFormPayloadToMarkdown(payload) {
   const title = payload.title || mondayReportTitle();
   const status = payload.status === "completed" ? "completed" : "draft";
@@ -136,13 +140,13 @@ function weeklyFormPayloadToMarkdown(payload) {
       ["当前细分阶段", project.detail_stage],
       ["本周进展", project.current_update],
     ].forEach(([label, value]) => {
-      lines.push(`- ${label}：${value || ""}`);
+      lines.push(`- ${label}：${weeklyMarkdownValue(value)}`);
     });
     [
       ["下一节点时间", project.next_node_time],
       ["备注", project.note],
     ].forEach(([label, value]) => {
-      lines.push(`- ${label}：${value || ""}`);
+      lines.push(`- ${label}：${weeklyMarkdownValue(value)}`);
     });
   });
   lines.push("", "## 本周拜访与沟通");
@@ -150,7 +154,7 @@ function weeklyFormPayloadToMarkdown(payload) {
   const meaningfulVisits = visits.filter((visit) => Object.values(visit).some((value) => Array.isArray(value) ? value.length : Boolean(value)));
   if (meaningfulVisits.length) {
     meaningfulVisits.forEach((visit) => {
-      lines.push(`- 接触日期：${visit.contact_date || ""}；平台公司ID：${visit.platform_company_id || ""}；平台公司：${visit.unit || ""}；接触对象：${visit.contact_people || visit.name || ""}；参与拜访人员：${visit.participants || ""}；接触方式：${visit.contact_method || ""}；对应项目：${visit.project || ""}；沟通内容：${visit.discussion || ""}；项目影响：${visit.project_impact || ""}；下一步行动：${visit.next_action || ""}；是否有效拜访：${visit.is_effective || ""}；`);
+      lines.push(weeklyMarkdownValue(`- 接触日期：${visit.contact_date || ""}；平台公司ID：${visit.platform_company_id || ""}；平台公司：${visit.unit || ""}；接触对象：${visit.contact_people || visit.name || ""}；参与拜访人员：${visit.participants || ""}；接触方式：${visit.contact_method || ""}；对应项目：${visit.project || ""}；沟通内容：${visit.discussion || ""}；项目影响：${visit.project_impact || ""}；下一步行动：${visit.next_action || ""}；是否有效拜访：${visit.is_effective || ""}；`));
     });
   } else {
     lines.push("- 接触日期：；平台公司：；接触对象：；参与拜访人员：；接触方式：；对应项目：；沟通内容：；项目影响：；下一步行动：；");
@@ -158,7 +162,7 @@ function weeklyFormPayloadToMarkdown(payload) {
   lines.push("", "## 下周工作计划");
   const planItems = Array.isArray(payload.next_week_plan) ? payload.next_week_plan.map(formatWeeklyPlanItem).filter(Boolean) : [];
   if (planItems.length) {
-    planItems.forEach((item, index) => lines.push(`${index + 1}. ${item}`));
+    planItems.forEach((item, index) => lines.push(`${index + 1}. ${weeklyMarkdownValue(item)}`));
   } else {
     lines.push("1. ");
   }
@@ -442,6 +446,24 @@ function parseWeeklyPlanLine(line) {
   return item;
 }
 
+function structuredRecords(text, startPattern, markerPattern) {
+  const records = [];
+  let current = "";
+  String(text || "").split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.replace(/\s+$/, "");
+    if (startPattern.test(line)) {
+      if (current.trim()) records.push(current.trim());
+      current = line.replace(markerPattern, "").trim();
+    } else if (line.trim() && current) {
+      current += `\n${line.trim()}`;
+    } else if (line.trim() && !current) {
+      current = line.trim();
+    }
+  });
+  if (current.trim()) records.push(current.trim());
+  return records;
+}
+
 function markdownSection(text, heading) {
   const pattern = new RegExp(`(?:^|\\n)## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`);
   const match = String(text || "").match(pattern);
@@ -457,9 +479,7 @@ function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
     next_week_plan: [],
   };
   const visitsText = markdownSection(markdown, "本周拜访与沟通") || markdownSection(markdown, "主要拜访人员");
-  payload.visits = visitsText
-    .split("\n")
-    .filter((line) => line.trim().startsWith("-"))
+  payload.visits = structuredRecords(visitsText, /^\s*-\s+/, /^\s*-\s+/)
     .map(parseVisitLine)
     .filter((visit) => Object.values(visit).some(Boolean));
 
@@ -471,24 +491,18 @@ function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
     .map((block) => {
       const lines = block.split("\n");
       const project = { name: lines.shift().trim(), next_week_work: [] };
+      let lastField = "";
       lines.forEach((line) => {
         const [label, value] = parseKeyValueLine(line);
-        if (label === "业主单位") project.owner_org = value;
-        if (label === "地区") project.region = value;
-        if (label === "技术配合组") project.technical_group = value;
-        if (label === "当前进度") project.progress = value;
-        if (label === "当前细分阶段") project.detail_stage = value;
-        if (label === "本周进展") project.current_update = value;
-        if (label === "下一步工作") project.next_work = value;
-        if (label === "下周工作") project.next_week_work = parseNextWeekWork(value);
-        if (label === "下一节点时间") project.next_node_time = value;
-        if (label === "关联项目") project.related_project = value;
-        if (label === "备注") project.note = value;
+        const fields = { 业主单位: "owner_org", 地区: "region", 技术配合组: "technical_group", 当前进度: "progress", 当前细分阶段: "detail_stage", 本周进展: "current_update", 下一步工作: "next_work", 下一节点时间: "next_node_time", 关联项目: "related_project", 备注: "note" };
+        const field = fields[label];
+        if (field) { project[field] = value; lastField = field; return; }
+        if (label === "下周工作") { project.next_week_work = parseNextWeekWork(value); lastField = ""; return; }
+        if (line.trim() && lastField) project[lastField] = `${project[lastField] || ""}\n${line.trim()}`.trim();
       });
       return project;
     });
-  payload.next_week_plan = markdownSection(markdown, "下周工作计划")
-    .split("\n")
+  payload.next_week_plan = structuredRecords(markdownSection(markdown, "下周工作计划"), /^\d+[.、]\s*/, /^\d+[.、]\s*/)
     .map(parseWeeklyPlanLine)
     .filter((item) => item.project || item.work);
   if (!payload.next_week_plan.length) {
