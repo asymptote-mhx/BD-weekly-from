@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>填写本周小结</title>
-  <link rel="stylesheet" href="styles.css?v=20260806-weekly-save-fix">
+  <link rel="stylesheet" href="styles.css?v=20260808-weekly-flow-2">
 </head>
 <body class="weekly-input-page">
   <header class="app-topbar">
@@ -54,7 +54,7 @@
 
       <section class="weekly-form-section">
         <div class="structured-header">
-          <div><h2>本周项目推进</h2><p>从台账选择项目，只填写本周发生的变化。</p></div>
+          <div><h2>本周项目推进</h2><p>按填写顺序编号；从台账选择项目，只记录本周发生的变化。</p></div>
           <button id="addLedgerWeeklyProjectButton" type="button">从台账选择项目</button>
           <button id="addCustomWeeklyProjectButton" type="button">新增自填项目</button>
         </div>
@@ -63,7 +63,7 @@
 
       <section class="weekly-form-section">
         <div class="structured-header">
-          <div><h2>本周拜访与沟通</h2><p>平台公司、接触对象和项目直接调用公司资源库。</p></div>
+          <div><h2>本周拜访与沟通</h2><p>按填写顺序编号；平台、人员或项目资料不全时也可以保存完成。</p></div>
           <a id="newPlatformCompanyLink" class="weekly-action-link" href="http://127.0.0.1:8798/resources.html" target="_blank" rel="noopener">本地新增平台公司</a>
           <button id="refreshWeeklyResourcesButton" type="button">刷新资源库</button>
           <button id="addWeeklyVisitButton" type="button">新增拜访记录</button>
@@ -73,7 +73,7 @@
 
       <section class="weekly-form-section">
         <div class="structured-header">
-          <h2>下周工作计划</h2>
+          <div><h2>下周工作计划</h2><p>依次选择台账项目、关联平台和人员，再填写工作内容。</p></div>
           <button id="addWeeklyPlanButton" type="button">新增下周工作</button>
         </div>
         <div id="weeklyPlanRows" class="weekly-rows"></div>
@@ -81,6 +81,6 @@
     </section>
   </main>
 
-  <script src="weekly_input.js?v=20260806-weekly-save-fix"></script>
+  <script src="weekly_input.js?v=20260808-weekly-flow-2"></script>
 </body>
 </html>

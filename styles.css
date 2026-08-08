@@ -555,9 +555,65 @@ h3 {
 
 .weekly-plan-row {
   display: grid;
-  grid-template-columns: 34px minmax(160px, .7fr) minmax(0, 1.3fr) 70px;
+  gap: 12px;
+  border: 1px solid #d8d2c7;
+  border-radius: 10px;
+  background: #fffdf9;
+  padding: 14px;
+}
+
+.weekly-plan-heading {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e7e0d5;
+}
+
+.weekly-plan-heading .weekly-work-index,
+.weekly-plan-heading span {
+  display: inline-flex;
+  min-width: 82px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.weekly-plan-heading .weekly-work-index {
+  background: #8b642f;
+  color: #fff;
+}
+
+.weekly-plan-heading span {
+  background: #ece8df;
+  color: #665f54;
+}
+
+.weekly-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.weekly-plan-grid > label {
+  display: grid;
+  gap: 7px;
+  color: #5f6870;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.weekly-plan-grid .full-width {
+  grid-column: 1 / -1;
+}
+
+.plan-people-list {
+  min-height: 96px;
+  max-height: 150px;
 }
 
 .weekly-work-index {
@@ -768,11 +824,13 @@ h3 {
   .weekly-row,
   .github-settings-grid,
   .weekly-project-grid,
-  .weekly-visit-grid {
+  .weekly-visit-grid,
+  .weekly-plan-grid {
     grid-template-columns: 1fr;
   }
 
-  .weekly-visit-grid .full-width { grid-column: auto; }
+  .weekly-visit-grid .full-width,
+  .weekly-plan-grid .full-width { grid-column: auto; }
 
   .weekly-form-actions,
   .weekly-input-header {
