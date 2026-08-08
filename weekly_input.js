@@ -401,11 +401,14 @@ function parseKeyValueLine(line) {
 
 function parseVisitLine(line) {
   const visit = {};
-  String(line || "")
-    .replace(/^-\s*/, "")
-    .split("；")
-    .forEach((part) => {
-      const [label, value] = parseKeyValueLine(part);
+  const labels = ["单位", "平台公司", "平台公司ID", "姓名", "接触对象", "职务", "对应项目", "接触日期", "参与拜访人员", "接触方式", "沟通内容", "项目影响", "下一步行动", "下一步日期", "是否有效拜访"];
+  const source = String(line || "").replace(/^-\s*/, "");
+  const pattern = new RegExp(`(?:^|[；;])\\s*(${labels.sort((a, b) => b.length - a.length).join("|")})\\s*[：:]`, "g");
+  const matches = [...source.matchAll(pattern)];
+  matches.forEach((match, index) => {
+      const end = index + 1 < matches.length ? matches[index + 1].index : source.length;
+      const label = match[1];
+      const value = source.slice(match.index + match[0].length, end).trim().replace(/[；;\s]+$/, "");
       if (label === "单位") visit.unit = value;
       if (label === "平台公司") visit.unit = value;
       if (label === "平台公司ID") visit.platform_company_id = value;
