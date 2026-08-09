@@ -433,7 +433,7 @@ function renderMarketingCards(rows) {
   return `
     <section class="ledger-visual-section">
       <div class="ledger-visual-header">
-        <h4>营销大事纪</h4>
+        <h4>拜访记录</h4>
         <span>${events.length} 条记录</span>
       </div>
       <div class="ledger-event-list">
@@ -575,12 +575,10 @@ function renderObjectTable(title, value) {
   if (!value || typeof value !== "object") return "";
   const people = Array.isArray(value.chain_people) ? value.chain_people : [];
   const decisionPeople = people.filter((row) => row["链条类型"] !== "操作链条");
-  const operationPeople = people.filter((row) => row["链条类型"] === "操作链条");
   const marketingEvents = Array.isArray(value.marketing_events) ? value.marketing_events : [];
   const competitors = Array.isArray(value.competitors) ? value.competitors : [];
   const content = [
     renderPeopleCards("业主决策链条", decisionPeople),
-    renderPeopleCards("操作链条", operationPeople),
     renderMarketingCards(marketingEvents),
     renderCompetitorCards(competitors),
   ].filter(Boolean).join("");
@@ -610,7 +608,6 @@ function renderProjectDetail() {
     <div class="detail-chain-preview">
       ${section("备注", field(project, "备注"))}
       ${section("业主决策链条", freeDetail["业主决策链条"] || sensitive["业主决策链条"])}
-      ${section("操作链条", freeDetail["操作链条"] || sensitive["操作链条"])}
       ${section("历史沟通", freeDetail["历史沟通"] || sensitive["历史沟通"])}
       ${renderObjectTable("结构化详情", structured)}
     </div>
