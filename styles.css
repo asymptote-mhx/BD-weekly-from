@@ -1809,3 +1809,4 @@ h3 {
     min-height: 50px;
   }
 }
+.ledger-platform-section{margin:14px 0;border:1px solid #d8dfe8;border-radius:12px;background:#f8fafc;padding:14px}.ledger-platform-section header{display:flex;align-items:center;justify-content:space-between;gap:12px}.ledger-platform-section h4,.ledger-platform-section p{margin:0}.ledger-platform-section header a{font-size:12px;font-weight:800;color:#315d87}.ledger-platform-section p{margin-top:9px;color:#6b7683;font-size:12px}.ledger-platform-tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.ledger-platform-tags a{border:1px solid #b8c7d8;border-radius:999px;background:#eaf0f7;color:#344f70;padding:6px 10px;font-size:12px;font-weight:800;text-decoration:none}.ledger-platform-tags span{color:#6b7683;font-size:12px}.online-project-link{color:inherit;text-decoration:none}.online-project-link:hover article{border-color:#7891ae;background:#f1f6fb}

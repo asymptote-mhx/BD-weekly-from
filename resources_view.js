@@ -4,7 +4,7 @@ const CATEGORY_ORDER = ["政府部门", "城投平台", "开发商", "高校", "
 const ROLE_ORDER = ["最终决策", "核心建议", "项目执行", "信息入口"];
 
 const state = {
-  companies: [], projects: [], people: [], links: [], timeline: [], selectedId: "", generatedAt: "",
+  companies: [], projects: [], people: [], links: [], timeline: [], selectedId: new URLSearchParams(location.search).get("company") || "", generatedAt: "",
 };
 const elementIds = ["githubOwnerInput", "githubRepoInput", "githubBranchInput", "githubTokenInput", "loadResourcesButton", "resourceSummary", "resourceResult", "companySearch", "companyList", "companyDetail"];
 const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElementById(id)]));
@@ -113,7 +113,7 @@ function renderDetail() {
   const id = field(company,"platform_company_id");
   const projects = companyProjects(id);
   const people = state.people.filter((row) => field(row,"platform_company_id") === id);
-  elements.companyDetail.innerHTML = `<header><span class="online-category-tag category-${CATEGORY_ORDER.indexOf(categoryOf(company)) + 1}">${escapeHtml(categoryOf(company))}</span><p class="eyebrow">PLATFORM PROFILE</p><h2>${escapeHtml(field(company,"平台公司名称"))}</h2><p>${escapeHtml(field(company,"上级主管单位") || "上级主管单位待补充")} · ${escapeHtml(field(company,"客户状态") || "状态待补充")}</p></header><div class="online-resource-metrics"><div><strong>${projects.length}</strong><span>关联项目</span></div><div><strong>${people.length}</strong><span>决策链人员</span></div><div><strong>${escapeHtml(field(company,"客户等级") || "-")}</strong><span>客户等级</span></div><div><strong>${escapeHtml(field(company,"内部维护人") || "-")}</strong><span>内部维护人</span></div></div><section><h3>决策链思维导图</h3>${mindMap(company,people)}</section><section><h3>接触时间线</h3>${contactTimeline(id)}</section><section><h3>关联项目</h3><div class="online-project-grid">${projects.length ? projects.map((project) => `<article><strong>${escapeHtml(field(project,"项目名称"))}</strong><span>${escapeHtml(field(project,"业主单位") || "业主待补充")} · ${escapeHtml(field(project,"当前进度"))}</span><small>${escapeHtml(field(project,"下一步工作") || "下一步待补充")}</small></article>`).join("") : `<p class="muted">尚未关联项目。</p>`}</div></section>`;
+  elements.companyDetail.innerHTML = `<header><span class="online-category-tag category-${CATEGORY_ORDER.indexOf(categoryOf(company)) + 1}">${escapeHtml(categoryOf(company))}</span><p class="eyebrow">PLATFORM PROFILE</p><h2>${escapeHtml(field(company,"平台公司名称"))}</h2><p>${escapeHtml(field(company,"上级主管单位") || "上级主管单位待补充")} · ${escapeHtml(field(company,"客户状态") || "状态待补充")}</p></header><div class="online-resource-metrics"><div><strong>${projects.length}</strong><span>关联项目</span></div><div><strong>${people.length}</strong><span>决策链人员</span></div><div><strong>${escapeHtml(field(company,"客户等级") || "-")}</strong><span>客户等级</span></div><div><strong>${escapeHtml(field(company,"内部维护人") || "-")}</strong><span>内部维护人</span></div></div><section><h3>决策链思维导图</h3>${mindMap(company,people)}</section><section><h3>接触时间线</h3>${contactTimeline(id)}</section><section><h3>关联项目</h3><div class="online-project-grid">${projects.length ? projects.map((project) => `<a class="online-project-link" href="ledger.html?project=${encodeURIComponent(field(project,"project_id"))}"><article><strong>${escapeHtml(field(project,"项目名称"))}</strong><span>${escapeHtml(field(project,"业主单位") || "业主待补充")} · ${escapeHtml(field(project,"当前进度"))}</span><small>${escapeHtml(field(project,"下一步工作") || "下一步待补充")}</small></article></a>`).join("") : `<p class="muted">尚未关联项目。</p>`}</div></section>`;
 }
 
 elements.loadResourcesButton.addEventListener("click", async () => {
@@ -124,5 +124,5 @@ elements.loadResourcesButton.addEventListener("click", async () => {
   } catch (error) { show(error.message, "error"); }
 });
 elements.companySearch.addEventListener("input", renderList);
-elements.companyList.addEventListener("click", (event) => { const button = event.target.closest("[data-id]"); if (!button) return; state.selectedId = button.dataset.id; renderList(); renderDetail(); });
+elements.companyList.addEventListener("click", (event) => { const button = event.target.closest("[data-id]"); if (!button) return; state.selectedId = button.dataset.id; const url = new URL(location.href); url.searchParams.set("company",state.selectedId); history.replaceState(null,"",url); renderList(); renderDetail(); });
 loadSettings();

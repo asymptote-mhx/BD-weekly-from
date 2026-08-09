@@ -157,11 +157,29 @@ async function loadLedgerSnapshot() {
   state.projects = Array.isArray(snapshot.projects) ? snapshot.projects.filter(isActiveProject) : [];
   state.details = snapshot.project_details && typeof snapshot.project_details === "object" ? snapshot.project_details : {};
   state.generatedAt = snapshot.generated_at || "";
-  state.selectedProjectId = state.projects[0]?.project_id || "";
+  const requestedProjectId = new URLSearchParams(location.search).get("project") || "";
+  state.selectedProjectId = state.projects.some((row) => String(row?.project_id || "") === requestedProjectId)
+    ? requestedProjectId : (state.projects[0]?.project_id || "");
 }
 
 function field(project, key) {
   return String(project?.[key] || "").trim();
+}
+
+function projectPlatforms(project) {
+  const linked = Array.isArray(project?.["关联平台公司"]) ? project["关联平台公司"] : [];
+  if (linked.length) return linked;
+  const legacyId = field(project, "平台公司ID");
+  return legacyId ? [{platform_company_id: legacyId, "平台公司名称": field(project, "平台公司名称")}] : [];
+}
+
+function platformNames(project) {
+  return projectPlatforms(project).map((row) => field(row, "平台公司名称")).filter(Boolean).join("、");
+}
+
+function renderPlatformSection(project) {
+  const platforms = projectPlatforms(project);
+  return `<section class="ledger-platform-section"><header><h4>关联平台公司</h4><a href="resources.html">查看平台资源库</a></header><div class="ledger-platform-tags">${platforms.length ? platforms.map((row) => `<a href="resources.html?company=${encodeURIComponent(field(row,"platform_company_id"))}">${escapeHtml(field(row,"平台公司名称") || "未命名平台")}</a>`).join("") : '<span>尚未关联平台公司</span>'}</div><p>业主单位为独立字段，可记录未进入资源库的实际业主。</p></section>`;
 }
 
 function recordStatus(project) {
@@ -205,6 +223,7 @@ function applyFilters() {
       field(project, "当前进度"),
       field(project, "当前细分阶段"),
       field(project, "下一步工作"),
+      platformNames(project),
     ].join(" ").toLowerCase();
     return (!query || haystack.includes(query))
       && (!progress || field(project, "当前进度") === progress)
@@ -301,6 +320,7 @@ function renderProjectList() {
           <span class="project-meta">
             <span>地区：${escapeHtml(field(project, "地区") || "未填")}</span>
             <span>业主：${escapeHtml(field(project, "业主单位") || "未填")}</span>
+            <span>平台：${escapeHtml(platformNames(project) || "未关联")}</span>
             <span>阶段：${escapeHtml(field(project, "当前细分阶段") || "未填")}</span>
             <span>技术：${escapeHtml(field(project, "技术配合类型") || "未填")}</span>
           </span>
@@ -318,6 +338,7 @@ function metric(label, value) {
 function renderKeyGrid(project) {
   const items = [
     ["业主单位", field(project, "业主单位")],
+    ["平台公司", platformNames(project)],
     ["地区", field(project, "地区")],
     ["合作单位", field(project, "合作单位")],
     ["业主类型", field(project, "业主类型")],
@@ -584,6 +605,7 @@ function renderProjectDetail() {
   elements.detailSubtitle.textContent = `${field(project, "地区") || "未填地区"} · ${field(project, "当前进度") || "未填进度"} · ${field(project, "当前细分阶段") || "未填阶段"}`;
   elements.detailBody.innerHTML = `
     ${renderKeyGrid(project)}
+    ${renderPlatformSection(project)}
     <section class="work-item">${escapeHtml(field(project, "下一步工作") || "暂无下一步工作。")}</section>
     <div class="detail-chain-preview">
       ${section("备注", field(project, "备注"))}
@@ -634,6 +656,7 @@ elements.projectList.addEventListener("click", (event) => {
   const card = event.target.closest("[data-project-id]");
   if (!card) return;
   state.selectedProjectId = card.dataset.projectId;
+  const url = new URL(location.href); url.searchParams.set("project", state.selectedProjectId); history.replaceState(null, "", url);
   renderAll();
 });
 
