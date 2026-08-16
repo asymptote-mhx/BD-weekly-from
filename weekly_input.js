@@ -535,8 +535,11 @@ function projectCompanies(projectId) {
   return platformCompanies().filter((company) => ids.has(String(company.platform_company_id || "")));
 }
 function splitSelections(value) { return String(value || "").split(/[、,，|]/).map((item) => item.trim()).filter(Boolean); }
+function sequencedPlatformCompanies() {
+  return platformCompanies().map((company, index) => ({ company, sequence: index + 1 })).reverse();
+}
 function companyOptions(selectedId = "", fallbackName = "") {
-  const rows = platformCompanies().map((company) => `<option value="${escapeHtml(company.platform_company_id || "")}"${company.platform_company_id === selectedId ? " selected" : ""}>${escapeHtml(company["平台公司名称"] || "未命名平台")}</option>`);
+  const rows = sequencedPlatformCompanies().map(({ company, sequence }) => `<option value="${escapeHtml(company.platform_company_id || "")}"${company.platform_company_id === selectedId ? " selected" : ""}>${sequence}. ${escapeHtml(company["平台公司名称"] || "未命名平台")}</option>`);
   if (fallbackName && !selectedId) rows.unshift(`<option value="" selected>${escapeHtml(fallbackName)}（旧记录，待关联资源库）</option>`);
   return `<option value="">选择平台公司</option>${rows.join("")}`;
 }
@@ -709,24 +712,38 @@ async function addLedgerWeeklyProjectRowWithLoad() {
 }
 
 function prependWeeklyRow(container, wrapper, options = {}) {
-  if (options.prepend) container.prepend(wrapper);
-  else container.appendChild(wrapper);
+  wrapper.dataset.weeklySequence = String(nextWeeklySequence(container));
+  if (options.append) container.appendChild(wrapper);
+  else container.prepend(wrapper);
   if (container === elements.weeklyProjectRows) renumberWeeklyProjectRows();
   if (container === elements.weeklyVisitRows) renumberWeeklyVisitRows();
+  if (container === elements.weeklyPlanRows) renumberWeeklyPlanItems();
+}
+
+function nextWeeklySequence(container) {
+  return Math.max(0, ...[...container.children].map((row) => Number(row.dataset.weeklySequence) || 0)) + 1;
+}
+
+function rowsByWeeklySequence(container, selector) {
+  return [...container.querySelectorAll(selector)].sort((left, right) =>
+    (Number(left.dataset.weeklySequence) || 0) - (Number(right.dataset.weeklySequence) || 0));
+}
+
+function normalizeWeeklySequence(container, selector, labelSelector, prefix) {
+  rowsByWeeklySequence(container, selector).forEach((row, index) => {
+    const sequence = index + 1;
+    row.dataset.weeklySequence = String(sequence);
+    const label = row.querySelector(labelSelector);
+    if (label) label.textContent = `${prefix} ${sequence}`;
+  });
 }
 
 function renumberWeeklyProjectRows() {
-  [...elements.weeklyProjectRows.querySelectorAll(".weekly-project-row")].forEach((row, index) => {
-    const label = row.querySelector("[data-weekly-project-number]");
-    if (label) label.textContent = `项目 ${index + 1}`;
-  });
+  normalizeWeeklySequence(elements.weeklyProjectRows, ".weekly-project-row", "[data-weekly-project-number]", "项目");
 }
 
 function renumberWeeklyVisitRows() {
-  [...elements.weeklyVisitRows.querySelectorAll(".weekly-visit-card")].forEach((row, index) => {
-    const label = row.querySelector("[data-weekly-visit-number]");
-    if (label) label.textContent = `拜访 ${index + 1}`;
-  });
+  normalizeWeeklySequence(elements.weeklyVisitRows, ".weekly-visit-card", "[data-weekly-visit-number]", "拜访");
 }
 
 function renderWeeklyPayload(payload) {
@@ -748,12 +765,16 @@ function projectIdFromPlanItem(item = {}) {
 }
 
 function planCompanyOptions(projectId, selectedId = "", fallbackName = "") {
-  const rows = projectCompanies(projectId).map((company) => {
+  const linkedIds = new Set(projectCompanies(projectId).map((company) => String(company.platform_company_id || "")));
+  const companies = sequencedPlatformCompanies().sort((left, right) =>
+    Number(linkedIds.has(String(right.company.platform_company_id || ""))) - Number(linkedIds.has(String(left.company.platform_company_id || ""))));
+  const rows = companies.map(({ company, sequence }) => {
     const id = String(company.platform_company_id || "");
-    return `<option value="${escapeHtml(id)}"${id === selectedId ? " selected" : ""}>${escapeHtml(company["平台公司名称"] || "未命名平台")}</option>`;
+    const relation = projectId && linkedIds.has(id) ? "（项目关联）" : "";
+    return `<option value="${escapeHtml(id)}"${id === selectedId ? " selected" : ""}>${sequence}. ${escapeHtml(company["平台公司名称"] || "未命名平台")}${relation}</option>`;
   });
   if (fallbackName && !selectedId) rows.unshift(`<option value="" selected>${escapeHtml(fallbackName)}（旧记录）</option>`);
-  const prompt = projectId ? (rows.length ? "选择关联平台" : "该项目尚未关联平台") : "请先选择项目";
+  const prompt = projectId ? "选择平台公司（项目关联项优先）" : "选择平台公司（项目可不选）";
   return `<option value="">${prompt}</option>${rows.join("")}`;
 }
 
@@ -817,8 +838,8 @@ function addWeeklyPlanItem(value = "", options = {}) {
   wrapper.innerHTML = `
     <div class="weekly-plan-heading"><strong class="weekly-work-index"></strong><span>下周工作</span></div>
     <div class="weekly-plan-grid">
-      <label>关联项目<select data-weekly-plan-project-id>${ledgerProjectOptions(projectId)}</select></label>
-      <label>关联平台<select data-weekly-plan-company-id>${planCompanyOptions(projectId, item.platform_company_id || "", item.platform_company || item.unit || "")}</select></label>
+      <label>关联项目（可选）<select data-weekly-plan-project-id>${ledgerProjectOptions(projectId)}</select></label>
+      <label>关联平台（可独立选择）<select data-weekly-plan-company-id>${planCompanyOptions(projectId, item.platform_company_id || "", item.platform_company || item.unit || "")}</select></label>
       <div class="visit-multi"><span class="visit-multi-title">关联人员（可多选）</span><div class="visit-choice-list plan-people-list" data-weekly-plan-people role="group" aria-label="关联人员"></div></div>
       <label class="full-width">工作内容<textarea data-weekly-plan-item rows="3" placeholder="填写下周需要推进的具体工作">${escapeHtml(item.work || "")}</textarea></label>
     </div>
@@ -827,10 +848,9 @@ function addWeeklyPlanItem(value = "", options = {}) {
   const projectSelect = wrapper.querySelector("[data-weekly-plan-project-id]");
   const companySelect = wrapper.querySelector("[data-weekly-plan-company-id]");
   projectSelect.addEventListener("change", () => {
+    const snapshot = planResourceSnapshot(wrapper);
     wrapper.dataset.fallbackProject = "";
-    wrapper.dataset.fallbackCompany = "";
-    wrapper.dataset.fallbackPeople = "";
-    refreshPlanDependencies(wrapper, {}, true);
+    refreshPlanDependencies(wrapper, { ...snapshot, project_id: projectSelect.value });
   });
   companySelect.addEventListener("change", () => {
     wrapper.dataset.fallbackCompany = "";
@@ -839,7 +859,6 @@ function addWeeklyPlanItem(value = "", options = {}) {
   });
   refreshPlanDependencies(wrapper, item);
   prependWeeklyRow(elements.weeklyPlanRows, wrapper, options);
-  renumberWeeklyPlanItems();
 }
 
 function addWeeklyWorkItem(container, value = "") {
@@ -861,13 +880,12 @@ function renumberWeeklyWorkItems(container) {
 }
 
 function renumberWeeklyPlanItems() {
-  [...elements.weeklyPlanRows.querySelectorAll(".weekly-plan-row")].forEach((item, index) => {
-    item.querySelector(".weekly-work-index").textContent = `计划 ${index + 1}`;
-  });
+  normalizeWeeklySequence(elements.weeklyPlanRows, ".weekly-plan-row", ".weekly-work-index", "计划");
 }
 
 function collectWeeklyRows(container) {
-  return [...container.children].map((row) => {
+  return [...container.children].sort((left, right) =>
+    (Number(left.dataset.weeklySequence) || 0) - (Number(right.dataset.weeklySequence) || 0)).map((row) => {
     const values = {};
     row.querySelectorAll("[data-weekly-field]").forEach((input) => {
       values[input.dataset.weeklyField] = input.value.trim();
@@ -919,7 +937,7 @@ function collectWeeklyForm(status = "draft") {
     import_now: false,
     visits: collectWeeklyVisits(),
     projects: collectWeeklyRows(elements.weeklyProjectRows),
-    next_week_plan: [...elements.weeklyPlanRows.querySelectorAll(".weekly-plan-row")]
+    next_week_plan: rowsByWeeklySequence(elements.weeklyPlanRows, ".weekly-plan-row")
       .map((row) => ({
         ...planResourceSnapshot(row),
         work: row.querySelector("[data-weekly-plan-item]")?.value.trim() || "",
