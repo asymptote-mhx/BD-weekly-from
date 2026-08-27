@@ -16,6 +16,7 @@ const DETAIL_STAGES = [
 const TECHNICAL_GROUP_OPTIONS = ["", "一组", "二组", "丁德强团队", "王启宇团队", "自行填写"];
 const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程", "维护服务"];
 const UAD_VISIT_PARTICIPANTS = ["毛瀚轩", "杨鹏", "胡彦之", "张涵舒"];
+const PLATFORM_SORT = window.MarketPlatformSort;
 const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-plan-project";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 const LEDGER_SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
@@ -543,13 +544,20 @@ function unmatchedSelections(value, availableLabels) {
   const available = new Set(availableLabels.map((item) => String(item || "").trim()).filter(Boolean));
   return splitSelections(value).filter((item) => !available.has(item)).join("、");
 }
-function sequencedPlatformCompanies() {
-  return platformCompanies().map((company, index) => ({ company, sequence: index + 1 })).reverse();
+function platformCompanyOptionGroups(selectedId = "", linkedIds = new Set()) {
+  return PLATFORM_SORT.groupCompanies(platformCompanies()).map((province) => province.categories.map(({category, rows}) => {
+    const sortedRows = [...rows].sort((left, right) => Number(linkedIds.has(String(right.company.platform_company_id || ""))) - Number(linkedIds.has(String(left.company.platform_company_id || ""))));
+    const options = sortedRows.map(({company, selectionCode}) => {
+      const id = String(company.platform_company_id || "");
+      const relation = linkedIds.has(id) ? "（项目关联）" : "";
+      return `<option value="${escapeHtml(id)}"${id === String(selectedId || "") ? " selected" : ""}>${escapeHtml(selectionCode)}｜${escapeHtml(company["平台公司名称"] || "未命名平台")}${relation}</option>`;
+    }).join("");
+    return `<optgroup label="${escapeHtml(`${province.name} ${province.code}｜${category}`)}">${options}</optgroup>`;
+  }).join("")).join("");
 }
 function companyOptions(selectedId = "", fallbackName = "") {
-  const rows = sequencedPlatformCompanies().map(({ company, sequence }) => `<option value="${escapeHtml(company.platform_company_id || "")}"${company.platform_company_id === selectedId ? " selected" : ""}>${sequence}. ${escapeHtml(company["平台公司名称"] || "未命名平台")}</option>`);
-  if (fallbackName && !selectedId) rows.unshift(`<option value="" selected>${escapeHtml(fallbackName)}（旧记录，待关联资源库）</option>`);
-  return `<option value="">选择平台公司</option>${rows.join("")}`;
+  const fallback = fallbackName && !selectedId ? `<option value="" selected>${escapeHtml(fallbackName)}（旧记录，待关联资源库）</option>` : "";
+  return `<option value="">选择平台公司</option>${fallback}${platformCompanyOptionGroups(selectedId)}`;
 }
 function dependentVisitOptions(row, companyId) {
   const selectedPeople = new Set(splitSelections(row.contact_people || row.name));
@@ -791,16 +799,9 @@ function projectIdFromPlanItem(item = {}) {
 
 function planCompanyOptions(projectId, selectedId = "", fallbackName = "") {
   const linkedIds = new Set(projectCompanies(projectId).map((company) => String(company.platform_company_id || "")));
-  const companies = sequencedPlatformCompanies().sort((left, right) =>
-    Number(linkedIds.has(String(right.company.platform_company_id || ""))) - Number(linkedIds.has(String(left.company.platform_company_id || ""))));
-  const rows = companies.map(({ company, sequence }) => {
-    const id = String(company.platform_company_id || "");
-    const relation = projectId && linkedIds.has(id) ? "（项目关联）" : "";
-    return `<option value="${escapeHtml(id)}"${id === selectedId ? " selected" : ""}>${sequence}. ${escapeHtml(company["平台公司名称"] || "未命名平台")}${relation}</option>`;
-  });
-  if (fallbackName && !selectedId) rows.unshift(`<option value="" selected>${escapeHtml(fallbackName)}（旧记录）</option>`);
+  const fallback = fallbackName && !selectedId ? `<option value="" selected>${escapeHtml(fallbackName)}（旧记录）</option>` : "";
   const prompt = projectId ? "选择平台公司（项目关联项优先）" : "选择平台公司（项目可不选）";
-  return `<option value="">${prompt}</option>${rows.join("")}`;
+  return `<option value="">${prompt}</option>${fallback}${platformCompanyOptionGroups(selectedId, linkedIds)}`;
 }
 
 function planPeopleOptions(companyId, item = {}) {

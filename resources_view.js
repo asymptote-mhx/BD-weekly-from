@@ -2,6 +2,7 @@ const SETTINGS_KEY = "bd-weekly-github-settings";
 const SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
 const CATEGORY_ORDER = ["政府部门", "城投平台", "开发商", "高校", "设计院", "施工单位", "资源方", "未分类"];
 const ROLE_ORDER = ["最终决策", "核心建议", "项目执行", "信息入口"];
+const PLATFORM_SORT = window.MarketPlatformSort;
 
 const state = {
   companies: [], projects: [], people: [], links: [], timeline: [], selectedId: new URLSearchParams(location.search).get("company") || "", generatedAt: "",
@@ -76,25 +77,18 @@ function companyProjects(companyId) {
 
 function renderList() {
   const keyword = elements.companySearch.value.trim().toLowerCase();
-  const sequenceById = new Map(state.companies.map((row, index) => [field(row, "platform_company_id"), index + 1]));
-  const rows = state.companies.filter((row) => `${field(row,"平台公司名称")} ${field(row,"别名")} ${field(row,"地区")} ${categoryOf(row)}`.toLowerCase().includes(keyword));
-  const grouped = new Map();
-  rows.forEach((row) => {
-    const category = categoryOf(row);
-    if (!grouped.has(category)) grouped.set(category, []);
-    grouped.get(category).push(row);
-  });
-  grouped.forEach((categoryRows) => categoryRows.sort((left, right) =>
-    (sequenceById.get(field(right,"platform_company_id")) || 0) - (sequenceById.get(field(left,"platform_company_id")) || 0)));
-  const categories = [...grouped.keys()].sort((a, b) => (CATEGORY_ORDER.indexOf(a) === -1 ? 99 : CATEGORY_ORDER.indexOf(a)) - (CATEGORY_ORDER.indexOf(b) === -1 ? 99 : CATEGORY_ORDER.indexOf(b)));
-  elements.companyList.innerHTML = categories.length ? categories.map((category) => `
-    <section class="online-company-group category-${CATEGORY_ORDER.indexOf(category) + 1}">
-      <h3><span>${escapeHtml(category)}</span><small>${grouped.get(category).length} 家</small></h3>
-      ${grouped.get(category).map((row) => {
-        const id = field(row, "platform_company_id");
-        return `<button class="online-company-item ${id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(id)}"><strong>${sequenceById.get(id) || "-"}. ${escapeHtml(field(row,"平台公司名称") || "未命名平台")}</strong><span>${escapeHtml(field(row,"地区") || "地区待补充")} · ${companyProjects(id).length} 个项目</span></button>`;
-      }).join("")}
-    </section>`).join("") : `<p class="muted">没有匹配的平台公司。</p>`;
+  const groups = PLATFORM_SORT.groupCompanies(state.companies).map((province) => ({
+    ...province,
+    categories: province.categories.map((category) => ({ ...category, rows: category.rows.filter(({company}) => `${field(company,"平台公司名称")} ${field(company,"别名")} ${field(company,"地区")} ${province.name} ${province.code} ${category.category}`.toLowerCase().includes(keyword)) })).filter((category) => category.rows.length),
+  })).filter((province) => province.categories.length);
+  elements.companyList.innerHTML = groups.length ? groups.map((province, provinceIndex) => {
+    const visibleCount = province.categories.reduce((total, category) => total + category.rows.length, 0);
+    const containsSelected = province.categories.some((category) => category.rows.some(({company}) => field(company,"platform_company_id") === state.selectedId));
+    return `<details class="online-province-group"${keyword || containsSelected || provinceIndex === 0 ? " open" : ""}><summary><strong>${escapeHtml(province.name)}</strong><span>${escapeHtml(province.code)} · ${visibleCount} 家</span></summary><div>${province.categories.map(({category, rows}) => `<section class="online-company-group category-${CATEGORY_ORDER.indexOf(category) + 1}"><h3><span>${escapeHtml(category)}</span><small>${rows.length} 家</small></h3>${rows.map(({company: row, sequence, selectionCode}) => {
+      const id = field(row, "platform_company_id");
+      return `<button class="online-company-item ${id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(id)}"><strong>${escapeHtml(sequence)}. ${escapeHtml(field(row,"平台公司名称") || "未命名平台")}</strong><span>${escapeHtml(selectionCode)} · ${escapeHtml(field(row,"地区") || "地区待补充")} · ${companyProjects(id).length} 个项目</span></button>`;
+    }).join("")}</section>`).join("")}</div></details>`;
+  }).join("") : `<p class="muted">没有匹配的平台公司。</p>`;
 }
 
 function personCard(row) {
