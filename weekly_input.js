@@ -15,6 +15,7 @@ const DETAIL_STAGES = [
 
 const TECHNICAL_GROUP_OPTIONS = ["", "一组", "二组", "丁德强团队", "王启宇团队", "自行填写"];
 const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程", "维护服务"];
+const UAD_VISIT_PARTICIPANTS = ["毛瀚轩", "杨鹏", "胡彦之", "张涵舒"];
 const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-plan-project";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 const LEDGER_SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
@@ -582,6 +583,8 @@ function visitResourceSnapshot(wrapper) {
   const customUnit = wrapper.querySelector("[data-visit-custom-unit]")?.value.trim() || "";
   const customPeople = wrapper.querySelector("[data-visit-custom-people]")?.value.trim() || "";
   const customProjects = wrapper.querySelector("[data-visit-custom-projects]")?.value.trim() || "";
+  const participants = [...wrapper.querySelectorAll("[data-visit-participants] input:checked")];
+  const customParticipants = wrapper.querySelector("[data-visit-custom-participants]")?.value.trim() || "";
   return {
     platform_company_id: companyId,
     unit: platformCompanies().find((company) => company.platform_company_id === companyId)?.["平台公司名称"] || customUnit,
@@ -589,6 +592,7 @@ function visitResourceSnapshot(wrapper) {
     contact_people: combineSelections(people.map((option) => option.dataset.choiceLabel || ""), customPeople),
     project_ids: projects.map((option) => option.value).join("、"),
     project: combineSelections(projects.map((option) => option.dataset.choiceLabel || ""), customProjects),
+    participants: combineSelections(participants.map((option) => option.value), customParticipants),
   };
 }
 function refreshVisitResourceSelectors() {
@@ -612,12 +616,15 @@ function addWeeklyVisitRow(row = {}, options = {}) {
     row.project,
     companyProjects(companyId).map((project) => project["项目名称"]),
   );
+  const selectedParticipants = new Set(splitSelections(row.participants));
+  const customParticipants = unmatchedSelections(row.participants, UAD_VISIT_PARTICIPANTS);
+  const participantChoices = UAD_VISIT_PARTICIPANTS.map((name) => `<label class="participant-choice"><input type="checkbox" value="${escapeHtml(name)}"${selectedParticipants.has(name) ? " checked" : ""}><span>${escapeHtml(name)}</span></label>`).join("");
   wrapper.innerHTML = `<div class="weekly-project-card-heading"><strong data-weekly-visit-number>拜访</strong><span>拜访与沟通</span></div><div class="weekly-visit-grid">
     <label>接触日期<input data-weekly-field="contact_date" type="date" value="${escapeHtml(row.contact_date || todayText())}"></label>
     <label>平台公司（资源库，可选）<select data-weekly-field="platform_company_id">${companyOptions(companyId)}</select></label>
     <label>其他单位（可手填）<input data-visit-custom-unit placeholder="资源库没有时直接填写单位" value="${escapeHtml(customUnit)}"></label>
     <label>接触方式<select data-weekly-field="contact_method"><option value="">请选择</option>${["简单拜访","项目汇报","商务宴请","线上交流","陪同考察"].map((value) => `<option${row.contact_method === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
-    <label>参与拜访人员<input data-weekly-field="participants" placeholder="填写UAD内部参与人员，支持多人" value="${escapeHtml(row.participants || "")}"></label>
+    <div class="visit-multi visit-participants"><span class="visit-multi-title">参与拜访人员（可多选）</span><div class="participant-choice-list" data-visit-participants role="group" aria-label="参与拜访人员">${participantChoices}</div><input data-visit-custom-participants placeholder="其他参与人员，可自行补充" value="${escapeHtml(customParticipants)}"><small>常用人员可直接勾选，其他人员在下方补充</small></div>
     <div class="visit-multi"><span class="visit-multi-title">接触对象（可多选）</span><div class="visit-choice-list" data-visit-people role="group" aria-label="接触对象"></div><input data-visit-custom-people placeholder="资源库没有该人员时直接填写，支持多人" value="${escapeHtml(customPeople)}"><small>可勾选决策链人员，也可直接手填</small></div>
     <div class="visit-multi"><span class="visit-multi-title">讨论项目（可多选）</span><div class="visit-choice-list" data-visit-projects role="group" aria-label="讨论项目"></div><input data-visit-custom-projects placeholder="没有对应项目时可留空；未登记项目可手填" value="${escapeHtml(customProjects)}"><small>可勾选关联项目，也可直接手填或不关联项目</small></div>
     <label class="full-width">沟通内容<textarea data-weekly-field="discussion" rows="3" placeholder="讨论了什么、获得了哪些关键信息">${escapeHtml(row.discussion || "")}</textarea></label>

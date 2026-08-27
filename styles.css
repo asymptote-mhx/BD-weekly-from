@@ -693,6 +693,7 @@ h3 {
 }
 
 .weekly-input-page .structured-header {
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 9px;
 }
@@ -721,7 +722,9 @@ h3 {
 
 .weekly-input-page .structured-header button,
 .weekly-input-page .structured-header .weekly-action-link {
+  align-self: flex-start;
   flex: 0 0 auto;
+  min-height: 34px;
   min-width: 118px;
 }
 
@@ -819,6 +822,46 @@ h3 {
   border-radius: 7px;
   padding: 8px 9px;
 }
+
+.participant-choice-list {
+  display: flex;
+  min-height: 38px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.weekly-visit-grid .participant-choice {
+  display: inline-flex;
+  width: auto;
+  min-height: 34px;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cbd7d2;
+  border-radius: 7px;
+  background: #fff;
+  padding: 6px 9px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.weekly-visit-grid .participant-choice:has(input:checked) {
+  border-color: #7fa499;
+  background: #dfeee8;
+  color: #214f43;
+}
+
+.weekly-visit-grid .participant-choice input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: #35665d;
+}
+
 
 /* Compact high-frequency fields; long narrative fields stay multi-line. */
 .weekly-visit-grid input:not([type="checkbox"]),
