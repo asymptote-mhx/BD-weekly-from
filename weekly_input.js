@@ -812,7 +812,9 @@ function refreshPlanDependencies(wrapper, item = {}, resetCompany = false) {
   const projectId = projectSelect?.value || "";
   const companySelect = wrapper.querySelector("[data-weekly-plan-company-id]");
   const selectedCompanyId = resetCompany ? "" : (item.platform_company_id || companySelect?.value || "");
-  if (companySelect) companySelect.innerHTML = planCompanyOptions(projectId, selectedCompanyId, item.platform_company || item.unit || "");
+  const customCompany = wrapper.querySelector("[data-weekly-plan-custom-company]")?.value.trim() || "";
+  const fallbackCompany = customCompany ? "" : (item.platform_company || item.unit || "");
+  if (companySelect) companySelect.innerHTML = planCompanyOptions(projectId, selectedCompanyId, fallbackCompany);
   const companyId = companySelect?.value || "";
   const peopleList = wrapper.querySelector("[data-weekly-plan-people]");
   if (peopleList) {
@@ -824,12 +826,14 @@ function refreshPlanDependencies(wrapper, item = {}, resetCompany = false) {
 function planResourceSnapshot(wrapper) {
   const projectId = wrapper.querySelector("[data-weekly-plan-project-id]")?.value || "";
   const companyId = wrapper.querySelector("[data-weekly-plan-company-id]")?.value || "";
+  const customProject = wrapper.querySelector("[data-weekly-plan-custom-project]")?.value.trim() || "";
+  const customCompany = wrapper.querySelector("[data-weekly-plan-custom-company]")?.value.trim() || "";
   const people = selectedOptionData(wrapper.querySelector("[data-weekly-plan-people]"));
   return {
     project_id: projectId,
-    project: state.ledgerProjects.find((project) => String(project.project_id || "") === projectId)?.["项目名称"] || wrapper.dataset.fallbackProject || "",
+    project: state.ledgerProjects.find((project) => String(project.project_id || "") === projectId)?.["项目名称"] || customProject || wrapper.dataset.fallbackProject || "",
     platform_company_id: companyId,
-    platform_company: platformCompanies().find((company) => String(company.platform_company_id || "") === companyId)?.["平台公司名称"] || wrapper.dataset.fallbackCompany || "",
+    platform_company: platformCompanies().find((company) => String(company.platform_company_id || "") === companyId)?.["平台公司名称"] || customCompany || wrapper.dataset.fallbackCompany || "",
     contact_person_ids: people.ids.join("、"),
     contact_people: people.names.join("、") || wrapper.dataset.fallbackPeople || "",
   };
@@ -848,6 +852,10 @@ function refreshPlanResourceSelectors() {
 function addWeeklyPlanItem(value = "", options = {}) {
   const item = value && typeof value === "object" ? value : { project: "", work: value || "" };
   const projectId = projectIdFromPlanItem(item);
+  const companyId = String(item.platform_company_id || "");
+  const hasKnownCompany = platformCompanies().some((company) => String(company.platform_company_id || "") === companyId);
+  const customProject = projectId ? "" : (item.project || "");
+  const customCompany = hasKnownCompany ? "" : (item.platform_company || item.unit || "");
   const wrapper = document.createElement("section");
   wrapper.className = "weekly-plan-row";
   wrapper.dataset.fallbackProject = item.project || "";
@@ -857,7 +865,9 @@ function addWeeklyPlanItem(value = "", options = {}) {
     <div class="weekly-plan-heading"><strong class="weekly-work-index"></strong><span>下周工作</span></div>
     <div class="weekly-plan-grid">
       <label>关联项目（可选）<select data-weekly-plan-project-id>${ledgerProjectOptions(projectId)}</select></label>
-      <label>关联平台（可独立选择）<select data-weekly-plan-company-id>${planCompanyOptions(projectId, item.platform_company_id || "", item.platform_company || item.unit || "")}</select></label>
+      <label>关联平台（可独立选择）<select data-weekly-plan-company-id>${planCompanyOptions(projectId, companyId, hasKnownCompany ? (item.platform_company || item.unit || "") : "")}</select></label>
+      <label>其他项目（可手填）<input data-weekly-plan-custom-project placeholder="台账没有时直接填写项目" value="${escapeHtml(customProject)}"></label>
+      <label>其他平台/单位（可手填）<input data-weekly-plan-custom-company placeholder="资源库没有时直接填写单位" value="${escapeHtml(customCompany)}"></label>
       <div class="visit-multi"><span class="visit-multi-title">关联人员（可多选）</span><div class="visit-choice-list plan-people-list" data-weekly-plan-people role="group" aria-label="关联人员"></div></div>
       <label class="full-width">工作内容<textarea data-weekly-plan-item rows="3" placeholder="填写下周需要推进的具体工作">${escapeHtml(item.work || "")}</textarea></label>
     </div>

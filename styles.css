@@ -820,6 +820,28 @@ h3 {
   padding: 8px 9px;
 }
 
+/* Compact high-frequency fields; long narrative fields stay multi-line. */
+.weekly-visit-grid input:not([type="checkbox"]),
+.weekly-visit-grid select,
+.weekly-plan-grid input:not([type="checkbox"]),
+.weekly-plan-grid select {
+  min-height: 38px;
+  padding: 7px 10px;
+}
+
+.weekly-visit-grid label,
+.weekly-plan-grid > label,
+.weekly-visit-grid .visit-multi,
+.weekly-plan-grid .visit-multi {
+  gap: 5px;
+}
+
+.weekly-visit-card,
+.weekly-plan-row {
+  gap: 10px;
+  padding: 12px;
+}
+
 @media (max-width: 920px) {
   .weekly-row,
   .github-settings-grid,
