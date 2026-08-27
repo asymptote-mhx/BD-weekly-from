@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>填写本周小结</title>
-  <link rel="stylesheet" href="styles.css?v=20260827-participants-1">
+  <link rel="stylesheet" href="styles.css?v=20260827-visit-count-1">
 </head>
 <body class="weekly-input-page">
   <header class="app-topbar">
@@ -63,7 +63,7 @@
 
       <section class="weekly-form-section">
         <div class="structured-header">
-          <div><h2>本周拜访与沟通</h2><p>资源库已有单位可直接选择；未建档的单位、人员和项目也可以手填。</p></div>
+          <div><h2>本周拜访与沟通 <span id="weeklyVisitCount" class="weekly-count-badge">拜访 0</span></h2><p>资源库已有单位可直接选择；未建档的单位、人员和项目也可以手填。</p></div>
           <a id="newPlatformCompanyLink" class="weekly-action-link" href="http://127.0.0.1:8798/resources.html" target="_blank" rel="noopener">本地新增平台公司</a>
           <button id="refreshWeeklyResourcesButton" type="button">刷新资源库</button>
           <button id="addWeeklyVisitButton" type="button">新增拜访记录</button>
@@ -82,6 +82,6 @@
   </main>
 
   <script src="platform_sorting.js?v=20260827-province-groups-1"></script>
-  <script src="weekly_input.js?v=20260827-province-groups-1"></script>
+  <script src="weekly_input.js?v=20260827-visit-count-1"></script>
 </body>
 </html>

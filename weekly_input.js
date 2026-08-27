@@ -29,6 +29,7 @@ const elements = {
   weeklyInputPanel: document.getElementById("weeklyInputPanel"),
   weeklyTitleInput: document.getElementById("weeklyTitleInput"),
   weeklyVisitRows: document.getElementById("weeklyVisitRows"),
+  weeklyVisitCount: document.getElementById("weeklyVisitCount"),
   weeklyProjectRows: document.getElementById("weeklyProjectRows"),
   weeklyPlanRows: document.getElementById("weeklyPlanRows"),
   addWeeklyVisitButton: document.getElementById("addWeeklyVisitButton"),
@@ -777,6 +778,20 @@ function renumberWeeklyProjectRows() {
 
 function renumberWeeklyVisitRows() {
   normalizeWeeklySequence(elements.weeklyVisitRows, ".weekly-visit-card", "[data-weekly-visit-number]", "拜访");
+  updateWeeklyVisitCount();
+}
+
+function isFilledVisitRow(row) {
+  return [...row.querySelectorAll("input, select, textarea")].some((control) => {
+    if (control.matches('[data-weekly-field="contact_date"]')) return false;
+    if (control.type === "checkbox" || control.type === "radio") return control.checked;
+    return String(control.value || "").trim() !== "";
+  });
+}
+
+function updateWeeklyVisitCount() {
+  const count = [...elements.weeklyVisitRows.querySelectorAll(".weekly-visit-card")].filter(isFilledVisitRow).length;
+  if (elements.weeklyVisitCount) elements.weeklyVisitCount.textContent = `拜访 ${count}`;
 }
 
 function renderWeeklyPayload(payload) {
@@ -1081,6 +1096,9 @@ elements.weeklyInputPanel.addEventListener("click", (event) => {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshWeeklyResources({ silent: true });
 });
+
+elements.weeklyVisitRows.addEventListener("input", updateWeeklyVisitCount);
+elements.weeklyVisitRows.addEventListener("change", updateWeeklyVisitCount);
 
 window.addEventListener("error", (event) => {
   showWeeklyResult(`页面脚本出错：${event.message || "未知错误"}。请刷新页面后再试。`, "error");
