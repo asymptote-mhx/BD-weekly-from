@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>线上项目台账</title>
-  <link rel="stylesheet" href="styles.css?v=20260809-platform-linkage-1">
+  <link rel="stylesheet" href="styles.css?v=20260912-github-master-1">
 </head>
 <body class="ledger-view-page">
   <header class="app-topbar">
@@ -12,15 +12,15 @@
       <p>Market Ledger</p>
       <strong>线上项目台账</strong>
     </div>
-    <span>GitHub 私有数据 · 只读查看</span>
+    <span>GitHub 私有数据 · 唯一主档</span>
   </header>
 
   <main class="ledger-view-shell">
     <section class="ledger-view-toolbar" aria-label="GitHub 设置">
       <div>
         <p class="eyebrow">GitHub Data</p>
-        <h1>读取台账快照</h1>
-        <span id="snapshotSummary">填写 token 后读取 BD-weekly-data 中的台账快照。</span>
+        <h1>项目台账主档</h1>
+        <span id="snapshotSummary">填写 token 后读取 BD-weekly-data 中的 GitHub 主档。</span>
       </div>
       <div class="github-settings-grid">
         <label>GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx" autocomplete="username"></label>
@@ -31,7 +31,9 @@
       <div class="ledger-view-actions">
         <a href="index.html" class="weekly-action-link">填写周报</a>
         <a href="resources.html" class="weekly-action-link">平台资源库</a>
-        <button id="loadLedgerButton" type="button">读取台账</button>
+        <button id="loadLedgerButton" type="button">读取 / 刷新</button>
+        <button id="saveLedgerButton" type="button" disabled>保存到 GitHub</button>
+        <button id="newProjectButton" class="new-project-button" type="button" disabled>新建项目</button>
         <button id="exportWeeklyReportButton" type="button">导出工作小结</button>
         <button id="exportMeetingListButton" type="button">导出例会清单</button>
       </div>
@@ -78,6 +80,10 @@
             <h2 id="detailTitle">请选择项目</h2>
             <p id="detailSubtitle" class="panel-summary">从左侧选择项目查看台账详情。</p>
           </div>
+          <div class="ledger-record-actions">
+            <button id="editProjectButton" type="button" disabled>编辑项目</button>
+            <button id="archiveProjectButton" type="button" disabled>归档项目</button>
+          </div>
         </header>
         <div id="detailBody" class="detail-body">
           <div class="empty-state">读取台账后，从左侧选择一个项目。</div>
@@ -86,6 +92,30 @@
     </section>
   </main>
 
-  <script src="ledger_view.js?v=20260809-visit-records-1"></script>
+  <dialog id="projectEditorDialog" class="resource-dialog ledger-editor-dialog">
+    <form id="projectEditorForm" method="dialog">
+      <header><div><p class="eyebrow">PROJECT MASTER</p><h2 id="projectEditorTitle">编辑项目</h2></div><button value="cancel" type="button" data-close-dialog>关闭</button></header>
+      <div id="projectEditorFields" class="ledger-editor-fields"></div>
+      <footer><span id="projectEditorHint">修改会先暂存在当前页面。</span><button value="save" type="submit">暂存项目</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="progressEditorDialog" class="resource-dialog">
+    <form id="progressEditorForm" method="dialog">
+      <header><div><p class="eyebrow">PROGRESS RECORD</p><h2 id="progressEditorTitle">新增推进记录</h2></div><button value="cancel" type="button" data-close-dialog>关闭</button></header>
+      <input id="progressRecordId" type="hidden">
+      <div class="form-grid">
+        <label>更新日期<input id="progressDate" type="date" required></label>
+        <label>当前阶段<select id="progressStage"></select></label>
+        <label class="wide">更新内容<textarea id="progressText" rows="4" required></textarea></label>
+        <label class="wide">下一步工作<textarea id="progressNextWork" rows="3"></textarea></label>
+        <label>下一节点时间<input id="progressNextDate" type="date"></label>
+        <label>来源文件<input id="progressSource" placeholder="线上台账"></label>
+      </div>
+      <footer><span>保存后仍需点击页面顶部“保存到 GitHub”。</span><button value="save" type="submit">暂存记录</button></footer>
+    </form>
+  </dialog>
+
+  <script src="ledger_view.js?v=20260912-github-master-1"></script>
 </body>
 </html>

@@ -43,13 +43,47 @@ const PROGRESS_BY_STAGE = {
 };
 const PRIORITY_ORDER = ["S", "A", "B", "C"];
 const MEETING_GROUP_ORDER = ["一组", "二组", "丁德强组", "未分组项目"];
+const PROJECT_FIELD_GROUPS = [
+  ["项目状态", [
+    ["项目名称", "项目名称", "text", true], ["记录状态", "记录状态", "select", false, ["正常", "已归档", "已合并", "已删除"]],
+    ["项目优先级", "项目优先级", "select", false, ["S", "A", "B", "C"]], ["数据确认状态", "数据确认状态"],
+    ["当前进度", "当前进度", "select", false, Object.keys(STAGE_CLASS)], ["当前细分阶段", "当前细分阶段", "select", false, STAGE_ORDER],
+    ["下一节点时间", "下一节点时间", "date"], ["内部负责人", "内部负责人"], ["状态备注", "状态备注", "textarea", true],
+    ["下一步工作", "下一步工作", "textarea", true],
+  ]],
+  ["基础信息", [
+    ["地区", "地区"], ["业主单位", "业主单位"], ["合作单位", "合作单位"], ["业主类型", "业主类型"],
+    ["详细地址", "详细地址", "text", true], ["用地面积", "用地面积"], ["建筑面积", "建筑面积"],
+    ["建设规模", "建设规模", "textarea", true], ["建设内容", "建设内容", "textarea", true],
+    ["策划范围或设计范围", "策划范围或设计范围", "textarea", true], ["总投资", "总投资"], ["预估合同额", "预估合同额"],
+  ]],
+  ["协同与关联", [
+    ["是否需要技术介入", "是否需要技术介入"], ["技术配合类型", "技术配合组"],
+    ["主项目ID", "主项目 ID"], ["主项目名称", "主项目名称"], ["关联原因", "关联原因", "textarea", true],
+    ["直接业主单位ID", "直接业主单位 ID"], ["平台归属确认状态", "平台归属确认状态"],
+  ]],
+];
+const DETAIL_FIELDS = [
+  ["项目概况", "项目概况"], ["决策与操作体系对接情况", "决策与操作体系对接情况"],
+  ["业主决策链条", "业主决策链条（历史文本）"], ["营销大事纪", "拜访记录（历史文本）"],
+  ["竞争态势分析", "竞争态势分析"], ["招标规划解析及招标文件策划", "招标规划解析及招标文件策划"],
+  ["下一步重点", "下一步重点"], ["需院内协调事宜", "需院内协调事宜"], ["参考来源", "参考来源"],
+];
+const SENSITIVE_FIELDS = [
+  ["预计设计费用", "预计设计费用"], ["报价区间", "报价区间"], ["商务成本", "商务成本"],
+  ["竞争格局", "竞争格局"], ["切入优势", "切入优势"], ["风险点", "风险点"], ["商务备注", "商务备注"],
+];
 
 const state = {
+  snapshot: null,
+  sha: "",
   projects: [],
   details: {},
+  progressRecords: [],
   filtered: [],
   selectedProjectId: "",
   generatedAt: "",
+  dirty: false,
 };
 
 const elements = {
@@ -58,6 +92,8 @@ const elements = {
   branch: document.getElementById("githubBranchInput"),
   token: document.getElementById("githubTokenInput"),
   loadButton: document.getElementById("loadLedgerButton"),
+  saveButton: document.getElementById("saveLedgerButton"),
+  newProjectButton: document.getElementById("newProjectButton"),
   result: document.getElementById("ledgerResult"),
   summary: document.getElementById("snapshotSummary"),
   search: document.getElementById("projectSearch"),
@@ -73,6 +109,14 @@ const elements = {
   detailTitle: document.getElementById("detailTitle"),
   detailSubtitle: document.getElementById("detailSubtitle"),
   detailBody: document.getElementById("detailBody"),
+  editProjectButton: document.getElementById("editProjectButton"),
+  archiveProjectButton: document.getElementById("archiveProjectButton"),
+  projectEditorDialog: document.getElementById("projectEditorDialog"),
+  projectEditorForm: document.getElementById("projectEditorForm"),
+  projectEditorFields: document.getElementById("projectEditorFields"),
+  projectEditorTitle: document.getElementById("projectEditorTitle"),
+  progressEditorDialog: document.getElementById("progressEditorDialog"),
+  progressEditorForm: document.getElementById("progressEditorForm"),
 };
 
 function escapeHtml(value) {
@@ -119,17 +163,44 @@ function githubHeaders(token) {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${token}`,
     "X-GitHub-Api-Version": "2022-11-28",
+    "Content-Type": "application/json; charset=utf-8",
   };
 }
 
-function githubContentUrl(config, path) {
-  return `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${path}?ref=${encodeURIComponent(config.branch)}`;
+function githubContentUrl(config, path, write = false) {
+  const base = `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${path}`;
+  return write ? base : `${base}?ref=${encodeURIComponent(config.branch)}`;
 }
 
 function base64ToUtf8(value) {
   const binary = atob(String(value || "").replace(/\s/g, ""));
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return new TextDecoder().decode(bytes);
+}
+
+function utf8ToBase64(value) {
+  const bytes = new TextEncoder().encode(String(value));
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+function nowText() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function uniqueId(prefix) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function masterReady() {
+  return Number(state.snapshot?.schema_version || 0) >= 3 && state.snapshot?.data_role === "github_master";
+}
+
+function markDirty(message = "修改已暂存，点击“保存到 GitHub”后生效。") {
+  state.dirty = true;
+  elements.saveButton.disabled = false;
+  showResult(message, "warning");
 }
 
 async function responseErrorMessage(response) {
@@ -154,12 +225,83 @@ async function loadLedgerSnapshot() {
   }
   const file = await response.json();
   const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
-  state.projects = Array.isArray(snapshot.projects) ? snapshot.projects.filter(isActiveProject) : [];
+  state.snapshot = snapshot;
+  state.sha = String(file.sha || "");
+  state.projects = Array.isArray(snapshot.projects) ? structuredClone(snapshot.projects) : [];
   state.details = snapshot.project_details && typeof snapshot.project_details === "object" ? snapshot.project_details : {};
+  state.details = structuredClone(state.details);
+  state.progressRecords = Array.isArray(snapshot.progress_records) ? structuredClone(snapshot.progress_records) : [];
   state.generatedAt = snapshot.generated_at || "";
+  state.dirty = false;
   const requestedProjectId = new URLSearchParams(location.search).get("project") || "";
   state.selectedProjectId = state.projects.some((row) => String(row?.project_id || "") === requestedProjectId)
     ? requestedProjectId : (state.projects[0]?.project_id || "");
+}
+
+function validateBrowserMaster() {
+  const ids = new Set();
+  for (const project of state.projects) {
+    const projectId = field(project, "project_id");
+    if (!projectId) throw new Error("存在缺少 project_id 的项目，不能保存。");
+    if (ids.has(projectId)) throw new Error(`项目 ID 重复：${projectId}`);
+    ids.add(projectId);
+  }
+  for (const record of state.progressRecords) {
+    if (!ids.has(field(record, "project_id"))) throw new Error(`推进记录引用了未知项目：${field(record, "project_id")}`);
+  }
+}
+
+function synchronizedPlatformProjects(snapshot) {
+  const resources = snapshot.platform_resources && typeof snapshot.platform_resources === "object"
+    ? snapshot.platform_resources : {};
+  resources.projects = structuredClone(state.projects);
+  const linked = new Set((resources.project_platform_links || []).map((row) => field(row, "project_id")));
+  resources.unassigned_projects = resources.projects.filter((row) => isActiveProject(row) && !linked.has(field(row, "project_id")));
+  snapshot.platform_resources = resources;
+}
+
+async function saveLedgerMaster() {
+  if (!state.snapshot || !state.sha) throw new Error("请先读取 GitHub 主档。");
+  if (!masterReady()) throw new Error("当前文件仍是旧快照。请先执行 Excel → GitHub 主档迁移，避免丢失归档项目。");
+  validateBrowserMaster();
+  const config = settings();
+  if (!config.token) throw new Error("请先填写 GitHub token。");
+  const snapshot = structuredClone(state.snapshot);
+  snapshot.schema_version = 3;
+  snapshot.data_role = "github_master";
+  snapshot.generated_at = nowText();
+  snapshot.projects = structuredClone(state.projects);
+  snapshot.project_details = structuredClone(state.details);
+  snapshot.progress_records = structuredClone(state.progressRecords);
+  synchronizedPlatformProjects(snapshot);
+  const body = {
+    message: `chore: update project ledger (${snapshot.generated_at})`,
+    content: utf8ToBase64(JSON.stringify(snapshot, null, 2)),
+    branch: config.branch,
+    sha: state.sha,
+  };
+  elements.saveButton.disabled = true;
+  elements.saveButton.textContent = "正在保存...";
+  try {
+    const response = await fetch(githubContentUrl(config, LEDGER_SNAPSHOT_PATH, true), {
+      method: "PUT", headers: githubHeaders(config.token), body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      if (response.status === 409 || response.status === 422) {
+        throw new Error("保存冲突：GitHub 主档已被其他修改更新。请先读取 / 刷新，再重新修改。");
+      }
+      throw new Error(`保存失败：${await responseErrorMessage(response)}`);
+    }
+    const result = await response.json();
+    state.snapshot = snapshot;
+    state.sha = String(result.content?.sha || state.sha);
+    state.generatedAt = snapshot.generated_at;
+    state.dirty = false;
+    showResult("已保存到 GitHub 私有主档。", "success");
+  } finally {
+    elements.saveButton.textContent = "保存到 GitHub";
+    elements.saveButton.disabled = !state.dirty;
+  }
 }
 
 function field(project, key) {
@@ -349,7 +491,7 @@ function renderKeyGrid(project) {
     ["预估合同额", field(project, "预估合同额")],
     ["是否需要技术介入", field(project, "是否需要技术介入")],
     ["技术配合组", field(project, "技术配合类型")],
-    ["负责人", field(project, "负责人")],
+    ["负责人", field(project, "内部负责人")],
   ];
   return `<div class="detail-grid">${items.map(([label, value]) => metric(label, value)).join("")}</div>`;
 }
@@ -586,6 +728,151 @@ function renderObjectTable(title, value) {
   return section(title, "暂无结构化详情。");
 }
 
+function editorControl(spec, value, source = "project") {
+  const [key, label, type = "text", wide = false, options = []] = spec;
+  const attrs = `data-editor-source="${source}" data-editor-key="${escapeHtml(key)}"`;
+  let control;
+  if (type === "select") {
+    control = `<select ${attrs}><option value="">未选择</option>${options.map((option) => `<option value="${escapeHtml(option)}"${String(value || "") === option ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select>`;
+  } else if (type === "textarea") {
+    control = `<textarea ${attrs} rows="3">${escapeHtml(value)}</textarea>`;
+  } else {
+    control = `<input ${attrs} type="${type}" value="${escapeHtml(value)}"${key === "项目名称" ? " required" : ""}>`;
+  }
+  return `<label class="${wide ? "wide" : ""}">${escapeHtml(label)}${control}</label>`;
+}
+
+function delimitedLines(rows, fields) {
+  return (Array.isArray(rows) ? rows : []).map((row) => fields.map((key) => field(row, key)).join("｜")).join("\n");
+}
+
+function structuredEditor(projectId, structured) {
+  return `<section class="ledger-editor-group"><h3>结构化详情</h3><div class="ledger-editor-grid">
+    <label class="wide">决策链人员 <small>每行：姓名｜单位｜职务｜电话｜权重｜备注</small><textarea data-editor-source="structured" data-editor-key="chain_people" rows="5">${escapeHtml(delimitedLines(structured.chain_people, ["姓名", "单位", "职务", "电话", "权重", "备注"]))}</textarea></label>
+    <label class="wide">拜访记录 <small>每行：日期｜内容</small><textarea data-editor-source="structured" data-editor-key="marketing_events" rows="5">${escapeHtml(delimitedLines(structured.marketing_events, ["日期", "内容"]))}</textarea></label>
+    <label class="wide">竞争态势 <small>每行：竞争对手｜条线关系｜备注</small><textarea data-editor-source="structured" data-editor-key="competitors" rows="5">${escapeHtml(delimitedLines(structured.competitors, ["竞争对手", "条线关系", "备注"]))}</textarea></label>
+  </div><p class="panel-summary">项目与平台公司的关联请在“平台资源库”维护，保存时会与项目主档一起保留。</p></section>`;
+}
+
+function openProjectEditor(project = null) {
+  if (!masterReady()) {
+    showResult("当前还是旧快照，请先完成 GitHub 主档迁移。", "error");
+    return;
+  }
+  const current = project || {"记录状态": "正常", "当前进度": "项目接触", "当前细分阶段": "线索获取"};
+  const projectId = field(current, "project_id");
+  const bundle = projectId ? (state.details[projectId] || {}) : {};
+  const detail = bundle.detail || {};
+  const sensitive = bundle.sensitive || {};
+  const structured = bundle.structured || {};
+  elements.projectEditorTitle.textContent = projectId ? `编辑：${field(current, "项目名称") || projectId}` : "新建项目";
+  elements.projectEditorDialog.dataset.projectId = projectId;
+  const groups = PROJECT_FIELD_GROUPS.map(([title, specs]) => `<section class="ledger-editor-group"><h3>${escapeHtml(title)}</h3><div class="ledger-editor-grid">${specs.map((spec) => editorControl(spec, current[spec[0]] || "")).join("")}</div></section>`);
+  groups.push(`<section class="ledger-editor-group"><h3>项目详情</h3><div class="ledger-editor-grid">${DETAIL_FIELDS.map(([key, label]) => editorControl([key, label, "textarea", true], detail[key] || "", "detail")).join("")}</div></section>`);
+  groups.push(`<section class="ledger-editor-group"><h3>敏感商务</h3><div class="ledger-editor-grid">${SENSITIVE_FIELDS.map(([key, label]) => editorControl([key, label, "textarea", true], sensitive[key] || "", "sensitive")).join("")}</div></section>`);
+  groups.push(structuredEditor(projectId, structured));
+  elements.projectEditorFields.innerHTML = groups.join("");
+  elements.projectEditorDialog.showModal();
+}
+
+function parseStructuredLines(text, fields, oldRows, projectId, prefix) {
+  const rows = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return rows.map((line, index) => {
+    const parts = line.split(/[｜|]/).map((part) => part.trim());
+    const old = Array.isArray(oldRows) ? (oldRows[index] || {}) : {};
+    const row = {...old, item_id: field(old, "item_id") || uniqueId(prefix), project_id: projectId, 排序: String(index + 1), 最近更新时间: nowText()};
+    fields.forEach((key, partIndex) => { row[key] = parts[partIndex] || ""; });
+    return row;
+  });
+}
+
+function submitProjectEditor(event) {
+  event.preventDefault();
+  const oldId = elements.projectEditorDialog.dataset.projectId || "";
+  const oldProject = state.projects.find((row) => field(row, "project_id") === oldId) || {};
+  const projectId = oldId || uniqueId("project");
+  const project = {...oldProject, project_id: projectId};
+  const oldBundle = state.details[projectId] || {};
+  const bundle = structuredClone(oldBundle);
+  bundle.detail = bundle.detail || {project_id: projectId};
+  bundle.sensitive = bundle.sensitive || {project_id: projectId};
+  bundle.structured = bundle.structured || {chain_people: [], marketing_events: [], competitors: []};
+  for (const input of elements.projectEditorFields.querySelectorAll("[data-editor-source][data-editor-key]")) {
+    const source = input.dataset.editorSource;
+    const key = input.dataset.editorKey;
+    const value = input.value.trim();
+    if (source === "project") project[key] = value;
+    if (source === "detail") bundle.detail[key] = value;
+    if (source === "sensitive") bundle.sensitive[key] = value;
+    if (source === "structured") {
+      const map = {
+        chain_people: [["姓名", "单位", "职务", "电话", "权重", "备注"], "chain-person"],
+        marketing_events: [["日期", "内容"], "visit"],
+        competitors: [["竞争对手", "条线关系", "备注"], "competitor"],
+      };
+      const [fields, prefix] = map[key];
+      bundle.structured[key] = parseStructuredLines(value, fields, bundle.structured[key], projectId, prefix);
+    }
+  }
+  if (!field(project, "项目名称")) return;
+  project["记录状态"] = field(project, "记录状态") || "正常";
+  project["最近更新时间"] = nowText();
+  bundle.detail.project_id = projectId;
+  bundle.detail["最近更新时间"] = nowText();
+  bundle.sensitive.project_id = projectId;
+  bundle.sensitive["最近更新时间"] = nowText();
+  const index = state.projects.findIndex((row) => field(row, "project_id") === projectId);
+  if (index === -1) state.projects.unshift(project); else state.projects[index] = project;
+  state.details[projectId] = bundle;
+  state.selectedProjectId = projectId;
+  markDirty(index === -1 ? "新项目已暂存，点击“保存到 GitHub”后生效。" : undefined);
+  elements.projectEditorDialog.close();
+  refreshFilters();
+  renderAll();
+}
+
+function projectProgress(projectId) {
+  return state.progressRecords.filter((row) => field(row, "project_id") === projectId)
+    .sort((a, b) => field(b, "更新日期").localeCompare(field(a, "更新日期")));
+}
+
+function renderProgressSection(projectId) {
+  const records = projectProgress(projectId);
+  return `<section class="ledger-progress-section"><header><div><h4>推进记录</h4><span class="panel-summary">${records.length} 条</span></div><button type="button" data-add-progress>新增记录</button></header><div class="ledger-progress-list">${records.length ? records.map((row) => `<article class="ledger-progress-item"><time>${escapeHtml(field(row, "更新日期") || "日期未填")}</time><div><strong>${escapeHtml(field(row, "当前阶段") || "阶段未填")}</strong><p>${escapeHtml(field(row, "更新内容") || "内容未填")}</p>${field(row, "下一步工作") ? `<span>下一步：${escapeHtml(field(row, "下一步工作"))}</span>` : ""}</div><div><button type="button" data-edit-progress="${escapeHtml(field(row, "record_id"))}">编辑</button><button type="button" data-delete-progress="${escapeHtml(field(row, "record_id"))}">删除</button></div></article>`).join("") : '<p class="panel-summary">暂无推进记录。</p>'}</div></section>`;
+}
+
+function openProgressEditor(record = null) {
+  const current = record || {};
+  document.getElementById("progressEditorTitle").textContent = record ? "编辑推进记录" : "新增推进记录";
+  document.getElementById("progressRecordId").value = field(current, "record_id");
+  document.getElementById("progressDate").value = field(current, "更新日期") || new Date().toISOString().slice(0, 10);
+  document.getElementById("progressStage").innerHTML = STAGE_ORDER.map((stage) => `<option${field(current, "当前阶段") === stage ? " selected" : ""}>${escapeHtml(stage)}</option>`).join("");
+  document.getElementById("progressText").value = field(current, "更新内容");
+  document.getElementById("progressNextWork").value = field(current, "下一步工作");
+  document.getElementById("progressNextDate").value = field(current, "下一节点时间");
+  document.getElementById("progressSource").value = field(current, "来源文件") || "线上台账";
+  elements.progressEditorDialog.showModal();
+}
+
+function submitProgressEditor(event) {
+  event.preventDefault();
+  const recordId = document.getElementById("progressRecordId").value || uniqueId("progress");
+  const old = state.progressRecords.find((row) => field(row, "record_id") === recordId) || {};
+  const record = {...old, record_id: recordId, project_id: state.selectedProjectId,
+    更新日期: document.getElementById("progressDate").value,
+    当前阶段: document.getElementById("progressStage").value,
+    更新内容: document.getElementById("progressText").value.trim(),
+    下一步工作: document.getElementById("progressNextWork").value.trim(),
+    下一节点时间: document.getElementById("progressNextDate").value,
+    来源文件: document.getElementById("progressSource").value.trim() || "线上台账",
+    是否已确认: "是"};
+  const index = state.progressRecords.findIndex((row) => field(row, "record_id") === recordId);
+  if (index === -1) state.progressRecords.push(record); else state.progressRecords[index] = record;
+  markDirty("推进记录已暂存，点击“保存到 GitHub”后生效。");
+  elements.progressEditorDialog.close();
+  renderProjectDetail();
+}
+
 function renderProjectDetail() {
   const project = state.projects.find((item) => field(item, "project_id") === state.selectedProjectId);
   if (!project) {
@@ -605,6 +892,7 @@ function renderProjectDetail() {
     ${renderKeyGrid(project)}
     ${renderPlatformSection(project)}
     <section class="work-item">${escapeHtml(field(project, "下一步工作") || "暂无下一步工作。")}</section>
+    ${renderProgressSection(id)}
     <div class="detail-chain-preview">
       ${section("备注", field(project, "备注"))}
       ${section("业主决策链条", freeDetail["业主决策链条"] || sensitive["业主决策链条"])}
@@ -621,6 +909,10 @@ function renderAll() {
   }
   renderProjectList();
   renderProjectDetail();
+  const selected = state.projects.find((row) => field(row, "project_id") === state.selectedProjectId);
+  elements.editProjectButton.disabled = !selected || !masterReady();
+  elements.archiveProjectButton.disabled = !selected || !masterReady();
+  elements.archiveProjectButton.textContent = selected && recordStatus(selected) === "已归档" ? "恢复项目" : "归档项目";
 }
 
 async function handleLoad() {
@@ -630,10 +922,13 @@ async function handleLoad() {
     await loadLedgerSnapshot();
     refreshFilters();
     renderAll();
-    elements.summary.textContent = state.generatedAt
-      ? `快照时间：${state.generatedAt}，项目数：${state.projects.length}`
-      : `项目数：${state.projects.length}`;
-    showResult(`已读取 ${state.projects.length} 个台账项目。`, "success");
+    elements.newProjectButton.disabled = !masterReady();
+    elements.saveButton.disabled = true;
+    const masterLabel = masterReady() ? "GitHub 主档" : "旧版只读快照";
+    elements.summary.textContent = `${masterLabel} · 更新时间：${state.generatedAt || "未记录"} · 项目数：${state.projects.length}`;
+    showResult(masterReady()
+      ? `已读取 ${state.projects.length} 个台账项目，可在线维护。`
+      : "已读取旧版快照。为防止归档数据丢失，编辑功能已锁定，请先执行主档迁移。", masterReady() ? "success" : "warning");
   } catch (error) {
     showResult(`读取失败：${error.message || error}`, "error");
   } finally {
@@ -642,6 +937,29 @@ async function handleLoad() {
 }
 
 elements.loadButton.addEventListener("click", handleLoad);
+elements.saveButton.addEventListener("click", () => saveLedgerMaster().catch((error) => {
+  showResult(error.message || String(error), "error");
+  elements.saveButton.disabled = !state.dirty;
+}));
+elements.newProjectButton.addEventListener("click", () => openProjectEditor());
+elements.editProjectButton.addEventListener("click", () => {
+  const project = state.projects.find((row) => field(row, "project_id") === state.selectedProjectId);
+  if (project) openProjectEditor(project);
+});
+elements.archiveProjectButton.addEventListener("click", () => {
+  const project = state.projects.find((row) => field(row, "project_id") === state.selectedProjectId);
+  if (!project) return;
+  const restoring = recordStatus(project) === "已归档";
+  const action = restoring ? "恢复" : "归档";
+  if (!confirm(`确定${action}“${field(project, "项目名称")}”吗？`)) return;
+  project["记录状态"] = restoring ? "正常" : "已归档";
+  project["最近更新时间"] = nowText();
+  markDirty(`项目已${action}并暂存，点击“保存到 GitHub”后生效。`);
+  renderAll();
+});
+elements.projectEditorForm.addEventListener("submit", submitProjectEditor);
+elements.progressEditorForm.addEventListener("submit", submitProgressEditor);
+document.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
 elements.exportWeeklyReportButton.addEventListener("click", exportWeeklyReportMarkdown);
 elements.exportMeetingListButton.addEventListener("click", exportMeetingListExcelHtml);
 [elements.search, elements.progressFilter, elements.regionFilter, elements.technicalFilter, elements.statusFilter, elements.sortBy].forEach((control) => {
@@ -655,6 +973,27 @@ elements.projectList.addEventListener("click", (event) => {
   state.selectedProjectId = card.dataset.projectId;
   const url = new URL(location.href); url.searchParams.set("project", state.selectedProjectId); history.replaceState(null, "", url);
   renderAll();
+});
+
+elements.detailBody.addEventListener("click", (event) => {
+  if (event.target.closest("[data-add-progress]")) openProgressEditor();
+  const edit = event.target.closest("[data-edit-progress]");
+  if (edit) {
+    const record = state.progressRecords.find((row) => field(row, "record_id") === edit.dataset.editProgress);
+    if (record) openProgressEditor(record);
+  }
+  const remove = event.target.closest("[data-delete-progress]");
+  if (remove && confirm("确定删除这条推进记录吗？GitHub 历史中仍可追溯。")) {
+    state.progressRecords = state.progressRecords.filter((row) => field(row, "record_id") !== remove.dataset.deleteProgress);
+    markDirty("推进记录已删除并暂存，点击“保存到 GitHub”后生效。");
+    renderProjectDetail();
+  }
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (!state.dirty) return;
+  event.preventDefault();
+  event.returnValue = "";
 });
 
 window.addEventListener("error", (event) => {
