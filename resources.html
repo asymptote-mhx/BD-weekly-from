@@ -4,42 +4,43 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>线上平台公司资源库</title>
-  <link rel="stylesheet" href="styles.css?v=20260827-resource-scroll-1">
+  <link rel="stylesheet" href="styles.css?v=20260910-resource-edit-1">
 </head>
-<body class="ledger-view-page">
-  <header class="app-topbar">
-    <div><p>Market Resources</p><strong>线上平台公司资源库</strong></div>
-    <span>GitHub 私有数据 · 只读查看</span>
-  </header>
-  <main class="ledger-view-shell">
-    <section class="ledger-view-toolbar">
-      <div>
-        <p class="eyebrow">PLATFORM LIBRARY</p>
-        <h1>平台公司与决策链</h1>
-        <span id="resourceSummary">填写 GitHub Token 后读取最新台账快照。</span>
+<body class="resource-page online-resource-edit-page">
+  <header class="app-topbar"><div><p>Market Resources</p><strong>线上平台公司资源库</strong></div><span>GitHub 私有数据 · 可在线维护</span></header>
+  <main class="resource-shell">
+    <section class="resource-hero">
+      <div><p class="eyebrow">PLATFORM LIBRARY</p><h1>平台公司与决策链</h1><p id="resourceSummary">填写 GitHub Token 后读取资源库。</p><p id="resourceResult" class="resource-save-status" aria-live="polite"></p></div>
+      <div class="resource-hero-actions online-resource-actions">
+        <label class="resource-token-field">GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx"></label>
+        <label class="resource-token-field">数据仓库<input id="githubRepoInput" value="BD-weekly-data"></label>
+        <label class="resource-token-field short-field">分支<input id="githubBranchInput" value="main"></label>
+        <label class="resource-token-field">Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
+        <button id="loadResourcesButton" type="button">读取 / 刷新</button><button id="saveResourcesButton" type="button" disabled>保存到 GitHub</button><button id="newCompanyButton" class="new-project-button" type="button" disabled>新建平台公司</button>
       </div>
-      <div class="github-settings-grid">
-        <label>GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx"></label>
-        <label>数据仓库<input id="githubRepoInput" value="BD-weekly-data"></label>
-        <label>分支<input id="githubBranchInput" value="main"></label>
-        <label class="full-width">Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
-      </div>
-      <div class="ledger-view-actions">
-        <a href="ledger.html" class="weekly-action-link">项目台账</a>
-        <a href="index.html" class="weekly-action-link">填写周报</a>
-        <button id="loadResourcesButton">读取资源库</button>
-      </div>
-      <div id="resourceResult" class="weekly-result" aria-live="polite"></div>
     </section>
-    <section class="online-resource-layout">
-      <aside class="online-resource-list">
-        <input id="companySearch" type="search" placeholder="搜索平台公司、分类或地区">
-        <div id="companyList"><p class="muted">尚未读取资源库。</p></div>
-      </aside>
-      <section id="companyDetail" class="online-resource-detail"><div class="empty-state">读取后选择平台公司。</div></section>
+    <section class="resource-layout">
+      <aside class="resource-sidebar"><input id="companySearch" type="search" placeholder="搜索平台公司、分类或地区"><div id="companyList" class="company-list"><p class="muted">尚未读取资源库。</p></div></aside>
+      <section id="companyDetail" class="company-detail empty-state">读取后选择平台公司</section>
     </section>
   </main>
-  <script src="platform_sorting.js?v=20260827-province-groups-1"></script>
-  <script src="resources_view.js?v=20260827-province-groups-1"></script>
+  <dialog id="companyDialog" class="resource-dialog"><form id="companyForm" method="dialog">
+    <input name="platform_company_id" type="hidden"><input name="record_intent" type="hidden">
+    <header><h2>平台公司档案</h2><button value="cancel" aria-label="关闭">×</button></header>
+    <div class="form-grid">
+      <label>平台公司名称<input name="平台公司名称" required></label><label>资源分类<select name="资源分类" required><option value="">请选择</option><option>政府部门</option><option>城投平台</option><option>开发商</option><option>高校</option><option>设计院</option><option>施工单位</option><option>资源方</option></select></label>
+      <label>别名<input name="别名"></label><label>地区<input name="地区"></label><label>公司层级<input name="公司层级" placeholder="市级 / 区县级 / 下属平台"></label><label>上级主管单位<input name="上级主管单位"></label>
+      <label>客户状态<select name="客户状态"><option>持续维护</option><option>已合作老客户</option><option>新拓展</option><option>沉睡客户</option><option>暂停维护</option></select></label><label>客户等级<input name="客户等级" placeholder="S / A / B / C"></label><label>内部维护人<input name="内部维护人"></label><label>维护状态<input name="维护状态"></label><label class="wide">备注<textarea name="备注" rows="3"></textarea></label>
+    </div><footer><button value="cancel">取消</button><button type="submit">暂存修改</button></footer>
+  </form></dialog>
+  <dialog id="contactDialog" class="resource-dialog"><form id="contactForm" method="dialog">
+    <input name="contact_id" type="hidden"><input name="来源类型" type="hidden"><input name="来源文件" type="hidden">
+    <header><h2>补充接触记录</h2><button value="cancel" aria-label="关闭">×</button></header>
+    <div class="form-grid">
+      <label>接触日期<input name="接触日期" type="date" required></label><label>接触方式<select name="接触方式" required><option value="">请选择</option><option>简单拜访</option><option>项目汇报</option><option>商务宴请</option><option>线上交流</option><option>陪同考察</option></select></label>
+      <label>接触对象<select id="contactPersonSelect" name="接触对象" required></select></label><label>参与拜访人员<input name="参与拜访人员"></label><label class="wide">关联项目<select id="contactProjectSelect" name="对应项目"></select></label><label class="wide">细节内容<textarea name="细节内容" rows="4"></textarea></label><label class="wide">下一步<textarea name="下一步" rows="2"></textarea></label>
+    </div><footer><button value="cancel">取消</button><button type="submit">暂存记录</button></footer>
+  </form></dialog>
+  <script src="platform_sorting.js?v=20260827-province-groups-1"></script><script src="platform_visit_display.js?v=20260910-visit-age-1"></script><script src="resources_view.js?v=20260910-resource-edit-1"></script>
 </body>
 </html>

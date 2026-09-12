@@ -1,125 +1,58 @@
 const SETTINGS_KEY = "bd-weekly-github-settings";
 const SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
-const CATEGORY_ORDER = ["政府部门", "城投平台", "开发商", "高校", "设计院", "施工单位", "资源方", "未分类"];
-const ROLE_ORDER = ["最终决策", "核心建议", "项目执行", "信息入口"];
+const CATEGORY_ORDER = ["政府部门","城投平台","开发商","高校","设计院","施工单位","资源方","未分类"];
+const ROLE_ORDER = ["最终决策","核心建议","项目执行","信息入口"];
 const PLATFORM_SORT = window.MarketPlatformSort;
+const PLATFORM_VISIT = window.MarketPlatformVisit;
+const state = {snapshot:null, resources:null, sha:"", selectedId:new URLSearchParams(location.search).get("company")||"", dirty:false};
+const $ = (selector) => document.querySelector(selector);
+const field = (row,key) => String(row?.[key] ?? "").trim();
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
+const nowText = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+const id = (prefix) => `${prefix}-${crypto.randomUUID()}`;
 
-const state = {
-  companies: [], projects: [], people: [], links: [], timeline: [], selectedId: new URLSearchParams(location.search).get("company") || "", generatedAt: "",
-};
-const elementIds = ["githubOwnerInput", "githubRepoInput", "githubBranchInput", "githubTokenInput", "loadResourcesButton", "resourceSummary", "resourceResult", "companySearch", "companyList", "companyDetail"];
-const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElementById(id)]));
-const field = (row, key) => String(row?.[key] || "").trim();
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
+function settings(){return {owner:$("#githubOwnerInput").value.trim()||"asymptote-mhx",repo:$("#githubRepoInput").value.trim()||"BD-weekly-data",branch:$("#githubBranchInput").value.trim()||"main",token:$("#githubTokenInput").value.trim()};}
+function loadSettings(){try{const saved=JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}");for(const [key,input] of [["owner","#githubOwnerInput"],["repo","#githubRepoInput"],["branch","#githubBranchInput"],["token","#githubTokenInput"]])if(saved[key])$(input).value=saved[key];}catch{localStorage.removeItem(SETTINGS_KEY);}}
+function headers(token){return {Accept:"application/vnd.github+json",Authorization:`Bearer ${token}`,"X-GitHub-Api-Version":"2022-11-28","Content-Type":"application/json; charset=utf-8"};}
+function contentUrl(config,write=false){const base=`https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${SNAPSHOT_PATH}`;return write?base:`${base}?ref=${encodeURIComponent(config.branch)}`;}
+function decodeBase64(value){const binary=atob(String(value||"").replace(/\s/g,""));return new TextDecoder().decode(Uint8Array.from(binary,(char)=>char.charCodeAt(0)));}
+function encodeBase64(value){const bytes=new TextEncoder().encode(value);let binary="";for(let start=0;start<bytes.length;start+=32768)binary+=String.fromCharCode(...bytes.subarray(start,start+32768));return btoa(binary);}
+async function githubError(response,prefix){let message=await response.text();try{message=JSON.parse(message).message||message;}catch{}throw new Error(`${prefix}：${message}`);}
+function show(message,type="info"){$("#resourceResult").textContent=message;$("#resourceResult").className=`resource-save-status ${type}`;}
+function markDirty(message="修改已暂存，点击“保存到 GitHub”后生效。"){state.dirty=true;$("#saveResourcesButton").disabled=false;show(message,"warning");renderSummary();}
+function companies(){return state.resources?.platform_companies||[];}
+function people(){return state.resources?.platform_chain_people||[];}
+function links(){return state.resources?.project_platform_links||[];}
+function timeline(){return state.resources?.contact_timeline||[];}
+function manualTimeline(){return state.resources?.manual_contact_timeline||[];}
+function projects(){return Array.isArray(state.resources?.projects)?state.resources.projects:(state.snapshot?.projects||[]);}
+function selectedCompany(){return companies().find((row)=>field(row,"platform_company_id")===state.selectedId);}
+function linkedProjectIds(companyId){return new Set(links().filter((row)=>field(row,"platform_company_id")===companyId).map((row)=>field(row,"project_id")));}
+function linkedProjects(companyId){const ids=linkedProjectIds(companyId);return projects().filter((row)=>ids.has(field(row,"project_id")));}
 
-function settings() {
-  return {
-    owner: elements.githubOwnerInput.value.trim() || "asymptote-mhx",
-    repo: elements.githubRepoInput.value.trim() || "BD-weekly-data",
-    branch: elements.githubBranchInput.value.trim() || "main",
-    token: elements.githubTokenInput.value.trim(),
-  };
-}
-function loadSettings() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    if (saved.owner) elements.githubOwnerInput.value = saved.owner;
-    if (saved.repo) elements.githubRepoInput.value = saved.repo;
-    if (saved.branch) elements.githubBranchInput.value = saved.branch;
-    if (saved.token) elements.githubTokenInput.value = saved.token;
-  } catch {
-    localStorage.removeItem(SETTINGS_KEY);
-  }
-}
-function show(message, type = "info") {
-  elements.resourceResult.textContent = message;
-  elements.resourceResult.className = `weekly-result ${type}`;
-}
-function decodeBase64(value) {
-  const binary = atob(String(value || "").replace(/\s/g, ""));
-  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
-}
+async function readSnapshot(){const config=settings();if(!config.token)throw new Error("请先填写 GitHub Token。");localStorage.setItem(SETTINGS_KEY,JSON.stringify(config));const response=await fetch(contentUrl(config),{headers:headers(config.token)});if(!response.ok)return githubError(response,"资源库读取失败");const file=await response.json();const snapshot=JSON.parse(decodeBase64(file.content));if(!snapshot.platform_resources||!Array.isArray(snapshot.platform_resources.platform_companies))throw new Error("快照中没有有效的平台资源数据。");state.snapshot=snapshot;state.resources=structuredClone(snapshot.platform_resources);state.resources.projects=Array.isArray(state.resources.projects)?state.resources.projects:(snapshot.projects||[]);state.resources.platform_chain_people=state.resources.platform_chain_people||[];state.resources.project_platform_links=state.resources.project_platform_links||[];state.resources.org_relationships=state.resources.org_relationships||[];state.resources.manual_contact_timeline=state.resources.manual_contact_timeline||[];state.resources.contact_timeline=state.resources.contact_timeline||[];state.sha=String(file.sha||"");state.dirty=false;if(!companies().some((row)=>field(row,"platform_company_id")===state.selectedId))state.selectedId=field(companies()[0],"platform_company_id");$("#saveResourcesButton").disabled=true;$("#newCompanyButton").disabled=false;renderAll();show("已读取 GitHub 主档。","success");}
 
-async function readSnapshot() {
-  const config = settings();
-  if (!config.token) throw new Error("请先填写 GitHub Token。");
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(config));
-  const url = `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${SNAPSHOT_PATH}?ref=${encodeURIComponent(config.branch)}`;
-  const response = await fetch(url, {headers: {Accept: "application/vnd.github+json", Authorization: `Bearer ${config.token}`, "X-GitHub-Api-Version": "2022-11-28"}});
-  if (!response.ok) {
-    let message = await response.text();
-    try { message = JSON.parse(message).message || message; } catch {}
-    throw new Error(`资源库读取失败：${message}`);
-  }
-  const file = await response.json();
-  const snapshot = JSON.parse(decodeBase64(file.content));
-  const resources = snapshot.platform_resources || {};
-  state.companies = Array.isArray(resources.platform_companies) ? resources.platform_companies : [];
-  state.projects = Array.isArray(resources.projects) ? resources.projects : (Array.isArray(snapshot.projects) ? snapshot.projects : []);
-  state.people = Array.isArray(resources.platform_chain_people) ? resources.platform_chain_people : [];
-  state.links = Array.isArray(resources.project_platform_links) ? resources.project_platform_links : [];
-  state.timeline = Array.isArray(resources.contact_timeline) ? resources.contact_timeline : [];
-  state.generatedAt = snapshot.generated_at || "";
-  if (!state.companies.some((row) => field(row, "platform_company_id") === state.selectedId)) {
-    state.selectedId = field(state.companies[0], "platform_company_id");
-  }
-}
+async function saveSnapshot(){if(!state.snapshot||!state.resources||!state.sha)return;const config=settings();if(!config.token)throw new Error("请先填写 GitHub Token。");const button=$("#saveResourcesButton");button.disabled=true;button.textContent="正在保存...";try{const snapshot=structuredClone(state.snapshot);const allowed=["platform_companies","org_relationships","platform_chain_people","manual_contact_timeline","project_platform_links","contact_timeline"];snapshot.platform_resources=snapshot.platform_resources||{};for(const key of allowed)snapshot.platform_resources[key]=state.resources[key]||[];snapshot.generated_at=nowText();const body={message:`chore: update platform resources (${snapshot.generated_at})`,content:encodeBase64(JSON.stringify(snapshot,null,2)),branch:config.branch,sha:state.sha};const response=await fetch(contentUrl(config,true),{method:"PUT",headers:headers(config.token),body:JSON.stringify(body)});if(!response.ok){if(response.status===409||response.status===422)throw new Error("保存冲突：GitHub 上的资源库已被其他修改更新。请先点击“读取 / 刷新”，确认最新内容后再修改。");return githubError(response,"保存失败");}const result=await response.json();state.snapshot=snapshot;state.sha=String(result.content?.sha||state.sha);state.dirty=false;show("已保存到 GitHub 私有主档。","success");renderSummary();}finally{button.textContent="保存到 GitHub";button.disabled=!state.dirty;}}
 
-function categoryOf(company) { return field(company, "资源分类") || "未分类"; }
-function companyProjectIds(companyId) {
-  return new Set(state.links.filter((row) => field(row, "platform_company_id") === companyId).map((row) => field(row, "project_id")));
-}
-function companyProjects(companyId) {
-  const ids = companyProjectIds(companyId);
-  if (ids.size) return state.projects.filter((row) => ids.has(field(row, "project_id")));
-  return state.projects.filter((row) => field(row, "平台公司ID") === companyId);
-}
+function renderSummary(){$("#resourceSummary").textContent=state.resources?`${companies().length} 家平台公司 · ${links().length} 条项目关联${state.dirty?" · 有未保存修改":""}`:"填写 GitHub Token 后读取资源库。";}
+function renderList(){if(!state.resources)return;const keyword=$("#companySearch").value.trim().toLowerCase();const groups=PLATFORM_SORT.groupCompanies(companies()).map((province)=>({...province,categories:province.categories.map((category)=>({...category,rows:category.rows.filter(({company})=>`${field(company,"平台公司名称")} ${field(company,"别名")} ${field(company,"地区")} ${province.name} ${province.code} ${category.category}`.toLowerCase().includes(keyword))})).filter((category)=>category.rows.length)})).filter((province)=>province.categories.length);$("#companyList").innerHTML=groups.length?groups.map((province,index)=>{const count=province.categories.reduce((sum,category)=>sum+category.rows.length,0);const selected=province.categories.some((category)=>category.rows.some(({company})=>field(company,"platform_company_id")===state.selectedId));return `<details class="company-province-group"${keyword||selected||index===0?" open":""}><summary><strong>${escapeHtml(province.name)}</strong><span>${escapeHtml(province.code)} · ${count} 家</span></summary><div class="company-province-body">${province.categories.map(({category,rows})=>`<section class="company-category-group" data-category="${escapeHtml(category)}"><header><span></span><strong>${escapeHtml(category)}</strong><small>${rows.length}</small></header>${rows.map(({company,sequence,selectionCode})=>{const companyId=field(company,"platform_company_id");return `<button class="company-list-item ${companyId===state.selectedId?"active":""}" data-company-id="${escapeHtml(companyId)}"><strong>${escapeHtml(sequence)}. ${escapeHtml(field(company,"平台公司名称")||"未命名平台")}</strong><span>${escapeHtml(selectionCode)} · ${escapeHtml(field(company,"地区")||"地区待补充")} · ${linkedProjects(companyId).length} 个项目</span></button>`;}).join("")}</section>`).join("")}</div></details>`;}).join(""):`<p class="muted">没有匹配的平台公司。</p>`;renderSummary();}
+function normalizedRole(row){const role=field(row,"决策角色");const legacy={"分管决策":"核心建议","专业评审":"核心建议","采购招标":"核心建议","外部影响人":"信息入口"};return ROLE_ORDER.includes(role)?role:(legacy[role]||"信息入口");}
+function personCard(row){return `<article class="mind-node"><span>${escapeHtml(normalizedRole(row))}</span><strong>${escapeHtml(field(row,"姓名")||"姓名待补充")}</strong><small>${escapeHtml([field(row,"部门"),field(row,"职务")].filter(Boolean).join(" · ")||"部门职务待补充")}</small><em>对我院：${escapeHtml(field(row,"关系状态")||"态度待确认")}</em>${field(row,"性格爱好")?`<small>性格爱好：${escapeHtml(field(row,"性格爱好"))}</small>`:""}</article>`;}
+function renderMindMap(rows){const groups=ROLE_ORDER.map((role,index)=>[role,index+1,rows.filter((row)=>normalizedRole(row)===role)]).filter(([, ,items])=>items.length);return groups.length?`<div class="mind-map"><div class="mind-root"><span>平台公司</span><strong>${escapeHtml(field(selectedCompany(),"平台公司名称"))}</strong></div><div class="mind-levels">${groups.map(([role,level,items])=>`<section class="mind-branch level-${level}"><div class="level-label"><b>0${level}</b><h4>${role}</h4></div><div class="level-people">${items.map(personCard).join("")}</div></section>`).join("")}</div></div>`:`<div class="empty-map">尚未录入决策链人员。</div>`;}
+function personEditorRow(row={}){return `<div class="person-editor-row" data-item-id="${escapeHtml(field(row,"item_id"))}"><input data-key="姓名" placeholder="姓名" value="${escapeHtml(field(row,"姓名"))}"><input data-key="部门" placeholder="部门" value="${escapeHtml(field(row,"部门"))}"><input data-key="职务" placeholder="职务" value="${escapeHtml(field(row,"职务"))}"><select data-key="决策角色"><option value="">选择角色</option>${ROLE_ORDER.map((role)=>`<option ${normalizedRole(row)===role?"selected":""}>${role}</option>`).join("")}</select><select data-key="关系状态"><option value="">对我院态度</option>${["抗拒","中立","支持","认可"].map((value)=>`<option ${field(row,"关系状态")===value?"selected":""}>${value}</option>`).join("")}</select><input data-key="我方对接人" placeholder="我方对接人" value="${escapeHtml(field(row,"我方对接人"))}"><input data-key="性格爱好" placeholder="性格爱好" value="${escapeHtml(field(row,"性格爱好"))}"><button type="button" data-remove-person>删除</button></div>`;}
+function renderDetail(){const company=selectedCompany();if(!company){$("#companyDetail").className="company-detail empty-state";$("#companyDetail").textContent=state.resources?"请选择或新建平台公司":"读取后选择平台公司";return;}const companyId=state.selectedId;const companyProjects=linkedProjects(companyId);const available=projects().filter((row)=>["","正常"].includes(field(row,"记录状态"))&&!linkedProjectIds(companyId).has(field(row,"project_id")));const companyPeople=people().filter((row)=>field(row,"platform_company_id")===companyId);const companyTimeline=timeline().filter((row)=>field(row,"platform_company_id")===companyId).sort((a,b)=>field(b,"接触日期").localeCompare(field(a,"接触日期")));const visitAge=PLATFORM_VISIT.describe(timeline(),companyId);$("#companyDetail").className="company-detail";$("#companyDetail").innerHTML=`<header class="company-heading"><div><p class="eyebrow">PLATFORM PROFILE</p><h2>${escapeHtml(field(company,"平台公司名称"))}</h2><p><span class="category-badge" data-category="${escapeHtml(field(company,"资源分类")||"待分类")}">${escapeHtml(field(company,"资源分类")||"待分类")}</span>${escapeHtml(field(company,"上级主管单位")||"上级主管单位待补充")} · ${escapeHtml(field(company,"客户状态")||"状态待补充")}</p><p class="visit-age" title="${escapeHtml(visitAge.date?`最近拜访：${visitAge.date}`:"尚无拜访记录")}">${escapeHtml(visitAge.label)}</p></div><div class="company-actions"><button id="editCompanyButton">编辑档案</button><button id="deleteCompanyButton" class="danger-button">删除公司</button></div></header><div class="resource-metrics"><div><strong>${companyProjects.length}</strong><span>关联项目</span></div><div><strong>${companyPeople.length}</strong><span>决策链人员</span></div><div><strong>${escapeHtml(field(company,"客户等级")||"-")}</strong><span>客户等级</span></div><div><strong>${escapeHtml(field(company,"内部维护人")||"-")}</strong><span>内部维护人</span></div></div><section class="resource-section"><header><div><h3>决策链思维导图</h3><p>保存到 GitHub 前可继续修改。</p></div><button id="togglePeopleEditor">编辑决策链</button></header>${renderMindMap(companyPeople)}<div id="peopleEditor" hidden><div class="people-editor-toolbar"><strong>正在编辑 ${companyPeople.length} 人</strong><button id="addPersonButton" type="button">新增人员</button></div><div id="peopleRows">${companyPeople.map(personEditorRow).join("")}</div><footer><span></span><button id="savePeopleButton" type="button">暂存人员</button></footer></div></section><section class="resource-section"><header><div><h3>接触时间线</h3><p>周报记录与线上补充按日期合并。</p></div><button id="addContactButton">补充记录</button></header><div class="contact-timeline">${companyTimeline.length?companyTimeline.map((event)=>`<article class="${field(event,"来源类型")==="人工补充"?"manual-contact":"weekly-contact"}"><time>${escapeHtml(field(event,"接触日期")||"日期未知")}</time><div><strong>接触对象：${escapeHtml(field(event,"接触对象")||field(event,"姓名")||"人员未填写")}</strong><span>${escapeHtml(field(event,"对应项目")||"未关联项目")}${field(event,"接触方式")?` · ${escapeHtml(field(event,"接触方式"))}`:""}</span>${field(event,"参与拜访人员")?`<small>UAD参与：${escapeHtml(field(event,"参与拜访人员"))}</small>`:""}${field(event,"细节内容")?`<p>${escapeHtml(field(event,"细节内容"))}</p>`:""}${field(event,"下一步")?`<small>下一步：${escapeHtml(field(event,"下一步"))}</small>`:""}</div><div class="contact-actions"><span class="source-badge">${escapeHtml(field(event,"来源类型")||"周报")}</span><button data-edit-contact="${escapeHtml(field(event,"contact_id"))}">编辑</button><button data-delete-contact="${escapeHtml(field(event,"contact_id"))}">删除</button></div></article>`).join(""):`<p class="muted">暂无接触记录。</p>`}</div></section><section class="resource-section"><header><div><h3>关联项目</h3><p>这里只维护关联关系，不修改项目主档。</p></div></header><div class="assigned-projects">${companyProjects.length?companyProjects.map((project)=>`<article><a class="assigned-project-link" href="ledger.html?project=${encodeURIComponent(field(project,"project_id"))}"><strong>${escapeHtml(field(project,"项目名称"))}</strong></a><span>${escapeHtml(field(project,"业主单位")||"业主待补充")} · ${escapeHtml(field(project,"当前进度"))}</span><button data-unassign-project="${escapeHtml(field(project,"project_id"))}">取消关联</button></article>`).join(""):`<p class="muted">尚未关联项目。</p>`}</div><div class="assign-control"><select id="projectToAssign"><option value="">选择要关联的项目</option>${available.map((project)=>`<option value="${escapeHtml(field(project,"project_id"))}">${escapeHtml(field(project,"项目名称"))}｜${escapeHtml(field(project,"业主单位"))}</option>`).join("")}</select><button id="assignProjectButton">确认关联</button></div></section>`;}
+function renderAll(){renderList();renderDetail();}
+function openCompanyDialog(company={}){const form=$("#companyForm");form.reset();for(const element of form.elements)if(element.name&&company[element.name]!=null)element.value=company[element.name];form.elements.platform_company_id.value=field(company,"platform_company_id")||id("platform");form.elements.record_intent.value=field(company,"platform_company_id")?"edit":"create";$("#companyDialog").showModal();}
+function openContactDialog(contact={}){const form=$("#contactForm");form.reset();const companyProjects=linkedProjects(state.selectedId);const companyPeople=people().filter((row)=>field(row,"platform_company_id")===state.selectedId&&field(row,"姓名"));$("#contactProjectSelect").innerHTML=`<option value="">不关联具体项目</option>${companyProjects.map((row)=>`<option>${escapeHtml(field(row,"项目名称"))}</option>`).join("")}`;$("#contactPersonSelect").innerHTML=`<option value="">从决策链选择</option>${companyPeople.map((row)=>`<option>${escapeHtml(field(row,"姓名"))}</option>`).join("")}`;for(const element of form.elements)if(element.name&&contact[element.name]!=null)element.value=contact[element.name];form.elements.contact_id.value=field(contact,"contact_id")||id("contact");if(!form.elements["接触日期"].value)form.elements["接触日期"].value=new Date().toISOString().slice(0,10);$("#contactDialog").showModal();}
+function upsertById(rows,row,key){const index=rows.findIndex((item)=>field(item,key)===field(row,key));if(index>=0)rows[index]=row;else rows.push(row);}
 
-function renderList() {
-  const keyword = elements.companySearch.value.trim().toLowerCase();
-  const groups = PLATFORM_SORT.groupCompanies(state.companies).map((province) => ({
-    ...province,
-    categories: province.categories.map((category) => ({ ...category, rows: category.rows.filter(({company}) => `${field(company,"平台公司名称")} ${field(company,"别名")} ${field(company,"地区")} ${province.name} ${province.code} ${category.category}`.toLowerCase().includes(keyword)) })).filter((category) => category.rows.length),
-  })).filter((province) => province.categories.length);
-  elements.companyList.innerHTML = groups.length ? groups.map((province, provinceIndex) => {
-    const visibleCount = province.categories.reduce((total, category) => total + category.rows.length, 0);
-    const containsSelected = province.categories.some((category) => category.rows.some(({company}) => field(company,"platform_company_id") === state.selectedId));
-    return `<details class="online-province-group"${keyword || containsSelected || provinceIndex === 0 ? " open" : ""}><summary><strong>${escapeHtml(province.name)}</strong><span>${escapeHtml(province.code)} · ${visibleCount} 家</span></summary><div>${province.categories.map(({category, rows}) => `<section class="online-company-group category-${CATEGORY_ORDER.indexOf(category) + 1}"><h3><span>${escapeHtml(category)}</span><small>${rows.length} 家</small></h3>${rows.map(({company: row, sequence, selectionCode}) => {
-      const id = field(row, "platform_company_id");
-      return `<button class="online-company-item ${id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(id)}"><strong>${escapeHtml(sequence)}. ${escapeHtml(field(row,"平台公司名称") || "未命名平台")}</strong><span>${escapeHtml(selectionCode)} · ${escapeHtml(field(row,"地区") || "地区待补充")} · ${companyProjects(id).length} 个项目</span></button>`;
-    }).join("")}</section>`).join("")}</div></details>`;
-  }).join("") : `<p class="muted">没有匹配的平台公司。</p>`;
-}
-
-function personCard(row) {
-  return `<article class="online-mind-node"><span>${escapeHtml(field(row,"决策角色") || "角色待确认")}</span><strong>${escapeHtml(field(row,"姓名") || "姓名待补充")}</strong><small>${escapeHtml([field(row,"部门"),field(row,"职务")].filter(Boolean).join(" · ") || "部门职务待补充")}</small><em>对我院态度：${escapeHtml(field(row,"关系状态") || "态度待确认")}</em>${field(row,"性格爱好") ? `<small>性格爱好：${escapeHtml(field(row,"性格爱好"))}</small>` : ""}</article>`;
-}
-function mindMap(company, people) {
-  const groups = ROLE_ORDER.map((role) => [role, people.filter((person) => field(person,"决策角色") === role)]).filter(([, rows]) => rows.length);
-  const other = people.filter((person) => !ROLE_ORDER.includes(field(person,"决策角色")));
-  if (other.length) groups.push(["待确认角色", other]);
-  return groups.length ? `<div class="online-mind-map"><div class="online-mind-root">${escapeHtml(field(company,"平台公司名称"))}</div><div>${groups.map(([role, rows], index) => `<section class="online-mind-branch mind-rank-${index + 1}"><h4>${index + 1}. ${escapeHtml(role)}</h4><div>${rows.map(personCard).join("")}</div></section>`).join("")}</div></div>` : `<div class="empty-state">尚未录入平台决策链。</div>`;
-}
-function contactTimeline(companyId) {
-  const rows = state.timeline.filter((row) => field(row,"platform_company_id") === companyId).sort((a, b) => field(b,"接触日期").localeCompare(field(a,"接触日期")));
-  return rows.length ? `<div class="online-contact-timeline">${rows.map((event) => `<article><time>${escapeHtml(field(event,"接触日期") || "日期未知")}</time><div><strong>${escapeHtml(field(event,"接触对象") || field(event,"姓名") || "人员未填写")}</strong><span>${escapeHtml(field(event,"对应项目") || "未关联项目")}${field(event,"接触方式") ? ` · ${escapeHtml(field(event,"接触方式"))}` : ""}</span>${field(event,"参与拜访人员") ? `<small>UAD参与：${escapeHtml(field(event,"参与拜访人员"))}</small>` : ""}${field(event,"细节内容") ? `<p>${escapeHtml(field(event,"细节内容"))}</p>` : ""}${field(event,"下一步") ? `<small>下一步：${escapeHtml(field(event,"下一步"))}</small>` : ""}</div><span class="source-badge">${escapeHtml(field(event,"来源类型") || "周报")}</span></article>`).join("")}</div>` : `<p class="muted">暂无接触记录。</p>`;
-}
-function renderDetail() {
-  const company = state.companies.find((row) => field(row,"platform_company_id") === state.selectedId);
-  if (!company) { elements.companyDetail.innerHTML = `<div class="empty-state">暂无平台公司数据。</div>`; return; }
-  const id = field(company,"platform_company_id");
-  const projects = companyProjects(id);
-  const people = state.people.filter((row) => field(row,"platform_company_id") === id);
-  elements.companyDetail.innerHTML = `<header><span class="online-category-tag category-${CATEGORY_ORDER.indexOf(categoryOf(company)) + 1}">${escapeHtml(categoryOf(company))}</span><p class="eyebrow">PLATFORM PROFILE</p><h2>${escapeHtml(field(company,"平台公司名称"))}</h2><p>${escapeHtml(field(company,"上级主管单位") || "上级主管单位待补充")} · ${escapeHtml(field(company,"客户状态") || "状态待补充")}</p></header><div class="online-resource-metrics"><div><strong>${projects.length}</strong><span>关联项目</span></div><div><strong>${people.length}</strong><span>决策链人员</span></div><div><strong>${escapeHtml(field(company,"客户等级") || "-")}</strong><span>客户等级</span></div><div><strong>${escapeHtml(field(company,"内部维护人") || "-")}</strong><span>内部维护人</span></div></div><section><h3>决策链思维导图</h3>${mindMap(company,people)}</section><section><h3>接触时间线</h3>${contactTimeline(id)}</section><section><h3>关联项目</h3><div class="online-project-grid">${projects.length ? projects.map((project) => `<a class="online-project-link" href="ledger.html?project=${encodeURIComponent(field(project,"project_id"))}"><article><strong>${escapeHtml(field(project,"项目名称"))}</strong><span>${escapeHtml(field(project,"业主单位") || "业主待补充")} · ${escapeHtml(field(project,"当前进度"))}</span><small>${escapeHtml(field(project,"下一步工作") || "下一步待补充")}</small></article></a>`).join("") : `<p class="muted">尚未关联项目。</p>`}</div></section>`;
-}
-
-elements.loadResourcesButton.addEventListener("click", async () => {
-  try {
-    show("正在读取资源库..."); await readSnapshot(); renderList(); renderDetail();
-    elements.resourceSummary.textContent = `${state.companies.length} 家平台公司 · ${state.links.length} 条项目关联 · 快照 ${state.generatedAt || "时间未知"}`;
-    show("平台资源库已与最新台账快照同步。", "success");
-  } catch (error) { show(error.message, "error"); }
-});
-elements.companySearch.addEventListener("input", renderList);
-elements.companyList.addEventListener("click", (event) => { const button = event.target.closest("[data-id]"); if (!button) return; state.selectedId = button.dataset.id; const url = new URL(location.href); url.searchParams.set("company",state.selectedId); history.replaceState(null,"",url); renderList(); renderDetail(); });
+$("#loadResourcesButton").addEventListener("click",()=>readSnapshot().catch((error)=>show(error.message,"error")));
+$("#saveResourcesButton").addEventListener("click",()=>saveSnapshot().catch((error)=>{show(error.message,"error");$("#saveResourcesButton").disabled=false;}));
+$("#companySearch").addEventListener("input",renderList);
+$("#companyList").addEventListener("click",(event)=>{const button=event.target.closest("[data-company-id]");if(!button)return;state.selectedId=button.dataset.companyId;const url=new URL(location.href);url.searchParams.set("company",state.selectedId);history.replaceState(null,"",url);renderAll();});
+$("#newCompanyButton").addEventListener("click",()=>openCompanyDialog());
+document.addEventListener("click",(event)=>{if(event.target.matches("[value=cancel]")){event.preventDefault();event.target.closest("dialog")?.close();return;}if(event.target.id==="editCompanyButton")openCompanyDialog(selectedCompany());if(event.target.id==="togglePeopleEditor")$("#peopleEditor").hidden=!$("#peopleEditor").hidden;if(event.target.id==="addPersonButton")$("#peopleRows").insertAdjacentHTML("beforeend",personEditorRow());if(event.target.matches("[data-remove-person]"))event.target.closest(".person-editor-row").remove();if(event.target.id==="addContactButton")openContactDialog();const edit=event.target.closest("[data-edit-contact]");if(edit){const contact=timeline().find((row)=>field(row,"contact_id")===edit.dataset.editContact);if(contact)openContactDialog(contact);}const remove=event.target.closest("[data-delete-contact]");if(remove&&confirm("确定删除这条接触记录吗？")){const contactId=remove.dataset.deleteContact;const contact=timeline().find((row)=>field(row,"contact_id")===contactId);state.resources.contact_timeline=timeline().filter((row)=>field(row,"contact_id")!==contactId);if(contactId.startsWith("weekly-")||field(contact,"来源类型").startsWith("周报")){upsertById(manualTimeline(),{contact_id:contactId,platform_company_id:state.selectedId,来源类型:"已删除",最近更新时间:nowText()},"contact_id");}else state.resources.manual_contact_timeline=manualTimeline().filter((row)=>field(row,"contact_id")!==contactId);markDirty();renderDetail();}if(event.target.id==="savePeopleButton"){const retained=people().filter((row)=>field(row,"platform_company_id")!==state.selectedId);const edited=[...document.querySelectorAll(".person-editor-row")].map((element,index)=>{const row={item_id:element.dataset.itemId||id("person"),platform_company_id:state.selectedId,排序:String(index+1),最近更新时间:nowText()};for(const input of element.querySelectorAll("[data-key]"))row[input.dataset.key]=input.value.trim();return row;}).filter((row)=>row.姓名||row.职务||row.部门);state.resources.platform_chain_people=[...retained,...edited];markDirty();renderDetail();}if(event.target.id==="assignProjectButton"){const projectId=$("#projectToAssign").value;if(!projectId)return;const company=selectedCompany();links().push({link_id:id("project-platform"),project_id:projectId,platform_company_id:state.selectedId,"平台公司名称":field(company,"平台公司名称"),"关联类型":"线上维护","是否主关联":links().some((row)=>field(row,"project_id")===projectId)?"否":"是","最近更新时间":nowText()});markDirty();renderAll();}const unassign=event.target.closest("[data-unassign-project]");if(unassign){state.resources.project_platform_links=links().filter((row)=>!(field(row,"platform_company_id")===state.selectedId&&field(row,"project_id")===unassign.dataset.unassignProject));markDirty();renderAll();}if(event.target.id==="deleteCompanyButton"&&confirm(`确定删除“${field(selectedCompany(),"平台公司名称")}”及其平台资源关联吗？`)){const companyId=state.selectedId;state.resources.platform_companies=companies().filter((row)=>field(row,"platform_company_id")!==companyId);for(const key of ["org_relationships","platform_chain_people","manual_contact_timeline","project_platform_links","contact_timeline"])state.resources[key]=(state.resources[key]||[]).filter((row)=>field(row,"platform_company_id")!==companyId);state.selectedId=field(companies()[0],"platform_company_id");markDirty();renderAll();}});
+$("#companyForm").addEventListener("submit",(event)=>{event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget).entries());const existing=companies().find((row)=>field(row,"platform_company_id")===data.platform_company_id)||{};upsertById(companies(),{...existing,...data,最近更新时间:nowText()},"platform_company_id");for(const link of links())if(field(link,"platform_company_id")===data.platform_company_id)link["平台公司名称"]=data["平台公司名称"];state.selectedId=data.platform_company_id;$("#companyDialog").close();markDirty();renderAll();});
+$("#contactForm").addEventListener("submit",(event)=>{event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget).entries());const existing=timeline().find((row)=>field(row,"contact_id")===data.contact_id)||{};const source=field(existing,"来源类型");const row={...existing,...data,platform_company_id:state.selectedId,来源类型:source.startsWith("周报")||data.contact_id.startsWith("weekly-")?"周报修订":"人工补充",最近更新时间:nowText()};upsertById(manualTimeline(),row,"contact_id");upsertById(timeline(),row,"contact_id");$("#contactDialog").close();markDirty();renderDetail();});
+window.addEventListener("beforeunload",(event)=>{if(state.dirty){event.preventDefault();event.returnValue="";}});
 loadSettings();
