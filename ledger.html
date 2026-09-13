@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>线上项目台账</title>
-  <link rel="stylesheet" href="styles.css?v=20260913-ledger-workflow-1">
+  <link rel="stylesheet" href="styles.css?v=20260913-ledger-workflow-2">
 </head>
 <body class="ledger-view-page">
   <header class="app-topbar">
@@ -48,7 +48,8 @@
         <section class="ledger-command-card ledger-export-card" aria-labelledby="exportActionsTitle">
           <div><p>EXPORT</p><h2 id="exportActionsTitle">成果导出</h2><span>按当前筛选结果生成文件，不修改线上主档。</span></div>
           <div class="ledger-command-actions">
-            <button id="exportWeeklyReportButton" type="button">导出工作小结</button>
+            <a href="reports.html" class="weekly-action-link ledger-pdf-link">每周周报 PDF</a>
+            <button id="exportWeeklyReportButton" type="button">工作小结 Markdown</button>
             <button id="exportMeetingListButton" type="button">导出例会清单</button>
           </div>
         </section>
