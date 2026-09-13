@@ -254,8 +254,21 @@ function validateBrowserMaster() {
 function synchronizedPlatformProjects(snapshot) {
   const resources = snapshot.platform_resources && typeof snapshot.platform_resources === "object"
     ? snapshot.platform_resources : {};
-  resources.projects = structuredClone(state.projects);
-  const linked = new Set((resources.project_platform_links || []).map((row) => field(row, "project_id")));
+  const links = Array.isArray(resources.project_platform_links) ? resources.project_platform_links : [];
+  const companyById = new Map(platformCompanies(resources).map((row) => [field(row, "platform_company_id"), row]));
+  const synchronizedProjects = state.projects.map((project) => {
+    const matched = links.filter((row) => field(row, "project_id") === field(project, "project_id")).map((row) => ({
+      platform_company_id: field(row, "platform_company_id"),
+      "平台公司名称": field(row, "平台公司名称") || field(companyById.get(field(row, "platform_company_id")), "平台公司名称"),
+      "关联类型": field(row, "关联类型"),
+      "是否主关联": field(row, "是否主关联"),
+    }));
+    const primary = matched.find((row) => row["是否主关联"] === "是") || matched[0] || {};
+    return {...project, "关联平台公司": matched, "平台公司ID": field(primary, "platform_company_id"), "平台公司名称": field(primary, "平台公司名称")};
+  });
+  snapshot.projects = structuredClone(synchronizedProjects);
+  resources.projects = structuredClone(synchronizedProjects);
+  const linked = new Set(links.map((row) => field(row, "project_id")));
   resources.unassigned_projects = resources.projects.filter((row) => isActiveProject(row) && !linked.has(field(row, "project_id")));
   snapshot.platform_resources = resources;
 }
@@ -294,6 +307,7 @@ async function saveLedgerMaster() {
     }
     const result = await response.json();
     state.snapshot = snapshot;
+    state.projects = structuredClone(snapshot.projects || []);
     state.sha = String(result.content?.sha || state.sha);
     state.generatedAt = snapshot.generated_at;
     state.dirty = false;
@@ -306,6 +320,55 @@ async function saveLedgerMaster() {
 
 function field(project, key) {
   return String(project?.[key] || "").trim();
+}
+
+function platformCompanies(resources = state.snapshot?.platform_resources) {
+  return Array.isArray(resources?.platform_companies) ? resources.platform_companies : [];
+}
+
+function platformLinks() {
+  const resources = state.snapshot?.platform_resources;
+  return Array.isArray(resources?.project_platform_links) ? resources.project_platform_links : [];
+}
+
+function selectedPlatformIds(projectId, project = {}) {
+  const linked = platformLinks().filter((row) => field(row, "project_id") === projectId).map((row) => field(row, "platform_company_id"));
+  if (linked.length) return new Set(linked);
+  return new Set(projectPlatforms(project).map((row) => field(row, "platform_company_id")).filter(Boolean));
+}
+
+function renderPlatformEditor(project) {
+  const companies = [...platformCompanies()].sort((a, b) => field(a, "平台公司名称").localeCompare(field(b, "平台公司名称"), "zh-Hans-CN"));
+  const selected = selectedPlatformIds(field(project, "project_id"), project);
+  const choices = companies.map((company) => {
+    const companyId = field(company, "platform_company_id");
+    const description = [field(company, "地区"), field(company, "资源分类")].filter(Boolean).join(" · ");
+    return `<label class="ledger-platform-choice"><input type="checkbox" data-platform-company-id="${escapeHtml(companyId)}"${selected.has(companyId) ? " checked" : ""}><span><strong>${escapeHtml(field(company, "平台公司名称") || "未命名平台")}</strong><small>${escapeHtml(description || "平台档案")}</small></span></label>`;
+  }).join("");
+  return `<section class="ledger-editor-group ledger-platform-editor"><header><div><h3>关联平台公司</h3><p>数据来自平台资源库，可多选；保存项目时同步写回双方关联。</p></div><a href="resources.html" target="_blank" rel="noopener">打开资源库</a></header><div class="ledger-platform-choice-grid">${choices || '<p class="panel-summary">平台资源库中尚无公司，请先新增平台档案。</p>'}</div></section>`;
+}
+
+function syncProjectPlatformLinks(project) {
+  const resources = state.snapshot.platform_resources || (state.snapshot.platform_resources = {});
+  const projectId = field(project, "project_id");
+  const selectedIds = [...elements.projectEditorFields.querySelectorAll("[data-platform-company-id]:checked")].map((input) => input.dataset.platformCompanyId).filter(Boolean);
+  const companyById = new Map(platformCompanies(resources).map((row) => [field(row, "platform_company_id"), row]));
+  const existing = platformLinks().filter((row) => field(row, "project_id") === projectId);
+  const existingByCompany = new Map(existing.map((row) => [field(row, "platform_company_id"), row]));
+  const previousPrimary = existing.find((row) => field(row, "是否主关联") === "是");
+  const primaryId = selectedIds.includes(field(previousPrimary, "platform_company_id")) ? field(previousPrimary, "platform_company_id") : (selectedIds[0] || "");
+  const retained = platformLinks().filter((row) => field(row, "project_id") !== projectId);
+  const updated = selectedIds.map((companyId) => {
+    const company = companyById.get(companyId) || {};
+    const old = existingByCompany.get(companyId) || {};
+    return {...old, link_id: field(old, "link_id") || uniqueId("project-platform"), project_id: projectId, platform_company_id: companyId, "平台公司名称": field(company, "平台公司名称"), "关联类型": field(old, "关联类型") || "项目台账维护", "是否主关联": companyId === primaryId ? "是" : "否", "最近更新时间": nowText()};
+  });
+  resources.project_platform_links = [...retained, ...updated];
+  const annotations = updated.map((row) => ({platform_company_id: field(row, "platform_company_id"), "平台公司名称": field(row, "平台公司名称"), "关联类型": field(row, "关联类型"), "是否主关联": field(row, "是否主关联")}));
+  const primary = annotations.find((row) => row["是否主关联"] === "是") || annotations[0] || {};
+  project["关联平台公司"] = annotations;
+  project["平台公司ID"] = field(primary, "platform_company_id");
+  project["平台公司名称"] = field(primary, "平台公司名称");
 }
 
 function projectPlatforms(project) {
@@ -751,7 +814,7 @@ function structuredEditor(projectId, structured) {
     <label class="wide">决策链人员 <small>每行：姓名｜单位｜职务｜电话｜权重｜备注</small><textarea data-editor-source="structured" data-editor-key="chain_people" rows="5">${escapeHtml(delimitedLines(structured.chain_people, ["姓名", "单位", "职务", "电话", "权重", "备注"]))}</textarea></label>
     <label class="wide">拜访记录 <small>每行：日期｜内容</small><textarea data-editor-source="structured" data-editor-key="marketing_events" rows="5">${escapeHtml(delimitedLines(structured.marketing_events, ["日期", "内容"]))}</textarea></label>
     <label class="wide">竞争态势 <small>每行：竞争对手｜条线关系｜备注</small><textarea data-editor-source="structured" data-editor-key="competitors" rows="5">${escapeHtml(delimitedLines(structured.competitors, ["竞争对手", "条线关系", "备注"]))}</textarea></label>
-  </div><p class="panel-summary">项目与平台公司的关联请在“平台资源库”维护，保存时会与项目主档一起保留。</p></section>`;
+  </div></section>`;
 }
 
 function openProjectEditor(project = null) {
@@ -768,6 +831,7 @@ function openProjectEditor(project = null) {
   elements.projectEditorTitle.textContent = projectId ? `编辑：${field(current, "项目名称") || projectId}` : "新建项目";
   elements.projectEditorDialog.dataset.projectId = projectId;
   const groups = PROJECT_FIELD_GROUPS.map(([title, specs]) => `<section class="ledger-editor-group"><h3>${escapeHtml(title)}</h3><div class="ledger-editor-grid">${specs.map((spec) => editorControl(spec, current[spec[0]] || "")).join("")}</div></section>`);
+  groups.push(renderPlatformEditor(current));
   groups.push(`<section class="ledger-editor-group"><h3>项目详情</h3><div class="ledger-editor-grid">${DETAIL_FIELDS.map(([key, label]) => editorControl([key, label, "textarea", true], detail[key] || "", "detail")).join("")}</div></section>`);
   groups.push(`<section class="ledger-editor-group"><h3>敏感商务</h3><div class="ledger-editor-grid">${SENSITIVE_FIELDS.map(([key, label]) => editorControl([key, label, "textarea", true], sensitive[key] || "", "sensitive")).join("")}</div></section>`);
   groups.push(structuredEditor(projectId, structured));
@@ -815,6 +879,7 @@ function submitProjectEditor(event) {
     }
   }
   if (!field(project, "项目名称")) return;
+  syncProjectPlatformLinks(project);
   project["记录状态"] = field(project, "记录状态") || "正常";
   project["最近更新时间"] = nowText();
   bundle.detail.project_id = projectId;
@@ -925,7 +990,7 @@ async function handleLoad() {
     elements.newProjectButton.disabled = !masterReady();
     elements.saveButton.disabled = true;
     const masterLabel = masterReady() ? "GitHub 主档" : "旧版只读快照";
-    elements.summary.textContent = `${masterLabel} · 更新时间：${state.generatedAt || "未记录"} · 项目数：${state.projects.length}`;
+    elements.summary.textContent = `${masterLabel} · 更新时间：${state.generatedAt || "未记录"} · 项目：${state.projects.length} · 平台公司：${platformCompanies().length}`;
     showResult(masterReady()
       ? `已读取 ${state.projects.length} 个台账项目，可在线维护。`
       : "已读取旧版快照。为防止归档数据丢失，编辑功能已锁定，请先执行主档迁移。", masterReady() ? "success" : "warning");

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>线上项目台账</title>
-  <link rel="stylesheet" href="styles.css?v=20260912-github-master-1">
+  <link rel="stylesheet" href="styles.css?v=20260913-ledger-workflow-1">
 </head>
 <body class="ledger-view-page">
   <header class="app-topbar">
@@ -28,15 +28,30 @@
         <label>分支<input id="githubBranchInput" value="main" autocomplete="off"></label>
         <label class="full-width">Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
       </div>
-      <div class="ledger-view-actions">
+      <nav class="ledger-view-nav" aria-label="线上工作台导航">
         <a href="index.html" class="weekly-action-link">填写周报</a>
         <a href="reports.html" class="weekly-action-link">历史周报</a>
         <a href="resources.html" class="weekly-action-link">平台资源库</a>
-        <button id="loadLedgerButton" type="button">读取 / 刷新</button>
-        <button id="saveLedgerButton" type="button" disabled>保存到 GitHub</button>
-        <button id="newProjectButton" class="new-project-button" type="button" disabled>新建项目</button>
-        <button id="exportWeeklyReportButton" type="button">导出工作小结</button>
-        <button id="exportMeetingListButton" type="button">导出例会清单</button>
+      </nav>
+      <div class="ledger-command-grid">
+        <section class="ledger-command-card ledger-sync-card" aria-labelledby="syncActionsTitle">
+          <div><p>MASTER SYNC</p><h2 id="syncActionsTitle">读取与保存</h2><span>一次读取项目台账及平台资源库；修改后统一保存到 GitHub 主档。</span></div>
+          <div class="ledger-command-actions">
+            <button id="loadLedgerButton" type="button">读取 / 刷新</button>
+            <button id="saveLedgerButton" type="button" disabled>保存到 GitHub</button>
+          </div>
+        </section>
+        <section class="ledger-command-card ledger-create-card" aria-labelledby="createActionsTitle">
+          <div><p>NEW RECORD</p><h2 id="createActionsTitle">新建项目</h2><span>新项目可直接选择平台资源库中的关联公司。</span></div>
+          <button id="newProjectButton" class="new-project-button" type="button" disabled>＋ 新建项目</button>
+        </section>
+        <section class="ledger-command-card ledger-export-card" aria-labelledby="exportActionsTitle">
+          <div><p>EXPORT</p><h2 id="exportActionsTitle">成果导出</h2><span>按当前筛选结果生成文件，不修改线上主档。</span></div>
+          <div class="ledger-command-actions">
+            <button id="exportWeeklyReportButton" type="button">导出工作小结</button>
+            <button id="exportMeetingListButton" type="button">导出例会清单</button>
+          </div>
+        </section>
       </div>
       <div id="ledgerResult" class="weekly-result" aria-live="polite"></div>
     </section>
@@ -117,6 +132,6 @@
     </form>
   </dialog>
 
-  <script src="ledger_view.js?v=20260912-github-master-1"></script>
+  <script src="ledger_view.js?v=20260913-ledger-workflow-1"></script>
 </body>
 </html>
