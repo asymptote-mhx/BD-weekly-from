@@ -571,11 +571,15 @@ function dependentVisitOptions(row, companyId) {
   }).join("");
   const selectedProjects = new Set(splitSelections(row.project));
   const selectedProjectIds = new Set(splitSelections(row.project_ids));
-  const projects = companyProjects(companyId).map((project) => {
+  const linkedProjectIds = new Set(companyProjects(companyId).map((project) => String(project.project_id || "")));
+  const projects = [...state.ledgerProjects]
+    .sort((left, right) => Number(linkedProjectIds.has(String(right.project_id || ""))) - Number(linkedProjectIds.has(String(left.project_id || ""))))
+    .map((project) => {
     const value = project.project_id || "";
     const label = project["项目名称"] || "未命名项目";
     const checked = selectedProjectIds.has(project.project_id) || selectedProjects.has(project["项目名称"]);
-    return `<label class="visit-choice"><input type="checkbox" value="${escapeHtml(value)}" data-choice-label="${escapeHtml(label)}"${checked ? " checked" : ""}><span><strong>${escapeHtml(label)}</strong></span></label>`;
+    const relation = companyId && linkedProjectIds.has(String(project.project_id || "")) ? "<small>平台关联</small>" : "";
+    return `<label class="visit-choice"><input type="checkbox" value="${escapeHtml(value)}" data-choice-label="${escapeHtml(label)}"${checked ? " checked" : ""}><span><strong>${escapeHtml(label)}</strong>${relation}</span></label>`;
   }).join("");
   return { people, projects };
 }
@@ -583,7 +587,7 @@ function refreshVisitDependencies(wrapper, row = {}) {
   const companyId = wrapper.querySelector('[data-weekly-field="platform_company_id"]').value;
   const options = dependentVisitOptions(row, companyId);
   wrapper.querySelector("[data-visit-people]").innerHTML = options.people || `<span class="visit-choice-empty">${companyId ? "该公司尚未录入决策链人员" : "请先选择平台公司"}</span>`;
-  wrapper.querySelector("[data-visit-projects]").innerHTML = options.projects || `<span class="visit-choice-empty">${companyId ? "该公司尚未关联项目" : "请先选择平台公司"}</span>`;
+  wrapper.querySelector("[data-visit-projects]").innerHTML = options.projects || '<span class="visit-choice-empty">暂无可选台账项目，可在下方手填</span>';
 }
 function visitResourceSnapshot(wrapper) {
   const companyId = wrapper.querySelector('[data-weekly-field="platform_company_id"]')?.value || "";
@@ -623,7 +627,7 @@ function addWeeklyVisitRow(row = {}, options = {}) {
   );
   const customProjects = row.project_custom || unmatchedSelections(
     row.project,
-    companyProjects(companyId).map((project) => project["项目名称"]),
+    state.ledgerProjects.map((project) => project["项目名称"]),
   );
   const selectedParticipants = new Set(splitSelections(row.participants));
   const customParticipants = unmatchedSelections(row.participants, UAD_VISIT_PARTICIPANTS);
@@ -635,13 +639,16 @@ function addWeeklyVisitRow(row = {}, options = {}) {
     <label>接触方式<select data-weekly-field="contact_method"><option value="">请选择</option>${["简单拜访","项目汇报","商务宴请","线上交流","陪同考察"].map((value) => `<option${row.contact_method === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
     <div class="visit-multi visit-participants"><span class="visit-multi-title">参与拜访人员（可多选）</span><div class="participant-choice-list" data-visit-participants role="group" aria-label="参与拜访人员">${participantChoices}</div><input data-visit-custom-participants placeholder="其他参与人员，可自行补充" value="${escapeHtml(customParticipants)}"><small>常用人员可直接勾选，其他人员在下方补充</small></div>
     <div class="visit-multi"><span class="visit-multi-title">接触对象（可多选）</span><div class="visit-choice-list" data-visit-people role="group" aria-label="接触对象"></div><input data-visit-custom-people placeholder="资源库没有该人员时直接填写，支持多人" value="${escapeHtml(customPeople)}"><small>可勾选决策链人员，也可直接手填</small></div>
-    <div class="visit-multi"><span class="visit-multi-title">讨论项目（可多选）</span><div class="visit-choice-list" data-visit-projects role="group" aria-label="讨论项目"></div><input data-visit-custom-projects placeholder="没有对应项目时可留空；未登记项目可手填" value="${escapeHtml(customProjects)}"><small>可勾选关联项目，也可直接手填或不关联项目</small></div>
+    <div class="visit-multi"><span class="visit-multi-title">讨论项目（可独立多选）</span><div class="visit-choice-list" data-visit-projects role="group" aria-label="讨论项目"></div><input data-visit-custom-projects placeholder="没有对应项目时可留空；未登记项目可手填" value="${escapeHtml(customProjects)}"><small>无需先选平台；选择平台后，关联项目会优先排列</small></div>
     <label class="full-width">沟通内容<textarea data-weekly-field="discussion" rows="3" placeholder="讨论了什么、获得了哪些关键信息">${escapeHtml(row.discussion || "")}</textarea></label>
     <label class="full-width">对项目的影响<textarea data-weekly-field="project_impact" rows="2" placeholder="对项目判断、阶段或决策产生了什么影响">${escapeHtml(row.project_impact || "")}</textarea></label>
     <label class="full-width">下一步行动<textarea data-weekly-field="next_action" rows="2">${escapeHtml(row.next_action || "")}</textarea></label>
   </div><button class="remove-weekly-project" type="button" data-remove-weekly-row>删除拜访记录</button>`;
   const companySelect = wrapper.querySelector('[data-weekly-field="platform_company_id"]');
-  companySelect.addEventListener("change", () => refreshVisitDependencies(wrapper));
+  companySelect.addEventListener("change", () => {
+    const snapshot = visitResourceSnapshot(wrapper);
+    refreshVisitDependencies(wrapper, { project: snapshot.project, project_ids: snapshot.project_ids });
+  });
   refreshVisitDependencies(wrapper, row);
   prependWeeklyRow(elements.weeklyVisitRows, wrapper, options);
 }

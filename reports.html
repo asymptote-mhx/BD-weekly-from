@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>历史周报与工作小结</title>
+  <link rel="stylesheet" href="reports.css?v=20260913-online-reports-1">
+</head>
+<body>
+  <header class="app-topbar no-print">
+    <div><p>WEEKLY REPORTS</p><strong>历史周报与工作小结</strong></div>
+    <nav><a href="index.html">填写周报</a><a href="ledger.html">项目台账</a><a href="resources.html">平台资源库</a></nav>
+  </header>
+
+  <main class="reports-shell">
+    <section class="reports-toolbar no-print" aria-label="GitHub 设置">
+      <div><p class="eyebrow">GITHUB DATA</p><h1>在线周报成果</h1><p id="historySummary">填写 Token 后读取历史周报。</p></div>
+      <div class="github-settings">
+        <label>GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx" autocomplete="username"></label>
+        <label>数据仓库<input id="githubRepoInput" value="BD-weekly-data" autocomplete="off"></label>
+        <label>分支<input id="githubBranchInput" value="main" autocomplete="off"></label>
+        <label>Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
+      </div>
+      <div class="toolbar-actions">
+        <button id="loadReportsButton" type="button">读取 / 刷新</button>
+        <label class="draft-toggle"><input id="includeDraftsInput" type="checkbox">包含草稿</label>
+        <button id="exportPdfButton" type="button" disabled>导出 PDF</button>
+        <button id="downloadMarkdownButton" type="button" disabled>下载原始周报</button>
+      </div>
+      <p id="reportsResult" class="result" aria-live="polite"></p>
+    </section>
+
+    <section class="reports-layout">
+      <aside class="history-panel no-print">
+        <header><h2>历史周报</h2><span id="historyCount">0 份</span></header>
+        <div id="historyList" class="history-list"><p class="empty">尚未读取周报。</p></div>
+      </aside>
+
+      <article id="reportPaper" class="report-paper">
+        <div class="empty report-empty">从左侧选择一份完成稿查看成果。</div>
+      </article>
+    </section>
+  </main>
+
+  <script src="weekly_markdown.js?v=20260913-online-reports-1"></script>
+  <script src="reports.js?v=20260913-online-reports-1"></script>
+</body>
+</html>
