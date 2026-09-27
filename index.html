@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>填写本周小结</title>
-  <link rel="stylesheet" href="styles.css?v=20260827-visit-count-1">
+  <link rel="stylesheet" href="styles.css?v=20260927-progress-import-1">
 </head>
 <body class="weekly-input-page">
   <header class="app-topbar">
@@ -45,11 +45,13 @@
 
       <div class="weekly-form-actions">
         <div>
-          <strong>保存本周小结</strong>
-          <span>暂存可反复修改；完成后供本地台账读取。</span>
+          <strong>本周周报流程</strong>
+          <span>1. 暂存或完成填写　2. 进度导入并更新台账　3. 生成 PDF 周报</span>
         </div>
         <button id="saveWeeklyDraftButton" type="button">暂存</button>
         <button id="completeWeeklyButton" type="button">完成</button>
+        <button id="importWeeklyProgressButton" type="button">进度导入</button>
+        <a id="generateWeeklyPdfLink" class="weekly-action-link" href="#" aria-disabled="true">生成 PDF 周报</a>
       </div>
       <div id="weeklyFormResult" class="weekly-result" aria-live="polite"></div>
 
@@ -83,6 +85,6 @@
   </main>
 
   <script src="platform_sorting.js?v=20260827-province-groups-1"></script>
-  <script src="weekly_input.js?v=20260927-ledger-sync-1"></script>
+  <script src="weekly_input.js?v=20260927-progress-import-1"></script>
 </body>
 </html>

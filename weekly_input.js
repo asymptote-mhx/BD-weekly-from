@@ -41,6 +41,8 @@ const elements = {
   addWeeklyPlanButton: document.getElementById("addWeeklyPlanButton"),
   saveWeeklyDraftButton: document.getElementById("saveWeeklyDraftButton"),
   completeWeeklyButton: document.getElementById("completeWeeklyButton"),
+  importWeeklyProgressButton: document.getElementById("importWeeklyProgressButton"),
+  generateWeeklyPdfLink: document.getElementById("generateWeeklyPdfLink"),
   weeklyFormResult: document.getElementById("weeklyFormResult"),
   githubOwnerInput: document.getElementById("githubOwnerInput"),
   githubRepoInput: document.getElementById("githubRepoInput"),
@@ -91,6 +93,13 @@ function optionHtml(options, selected = "") {
 function showWeeklyResult(message, type = "info") {
   elements.weeklyFormResult.textContent = message;
   elements.weeklyFormResult.className = `weekly-result ${type}`;
+}
+
+function setWeeklyPdfLink(title, enabled = true) {
+  elements.generateWeeklyPdfLink.href = enabled
+    ? `reports.html?title=${encodeURIComponent(title)}`
+    : "#";
+  elements.generateWeeklyPdfLink.setAttribute("aria-disabled", enabled ? "false" : "true");
 }
 
 function isGitHubSaveMode() {
@@ -1080,18 +1089,23 @@ function validateWeeklyProjectRows(status) {
   return false;
 }
 
-async function saveWeeklyForm(status = "draft") {
-  const button = status === "completed" ? elements.completeWeeklyButton : elements.saveWeeklyDraftButton;
+async function saveWeeklyForm(status = "draft", importProgress = false) {
+  const button = importProgress
+    ? elements.importWeeklyProgressButton
+    : status === "completed" ? elements.completeWeeklyButton : elements.saveWeeklyDraftButton;
   button.disabled = true;
-  showWeeklyResult(status === "completed" ? "正在保存完成稿..." : "正在暂存草稿...", "info");
+  showWeeklyResult(importProgress ? "正在导入本周进度并更新台账..." : status === "completed" ? "正在保存完成稿..." : "正在暂存草稿...", "info");
   try {
     if (!validateWeeklyProjectRows(status)) return;
     const payload = collectWeeklyForm(status);
     if (isGitHubSaveMode()) {
       const data = await saveWeeklyToGitHub(payload);
-      if (status === "completed") {
+      if (importProgress) {
         const updated = await updateLedgerFromWeeklyPayload(payload, collectGitHubSettings());
-        showWeeklyResult(`已完成并保存到 GitHub：${data.file}；同时更新 ${updated} 个台账项目。`, "success");
+        setWeeklyPdfLink(payload.title);
+        showWeeklyResult(`进度导入完成：已保存 ${data.file}，并更新 ${updated} 个台账项目。下一步可点击“生成 PDF 周报”。`, "success");
+      } else if (status === "completed") {
+        showWeeklyResult(`已保存完成稿：${data.file}。请继续点击“进度导入”更新台账。`, "success");
       } else {
         showWeeklyResult(`已暂存到 GitHub：${data.file}。`, "success");
       }
@@ -1148,6 +1162,12 @@ elements.addWeeklyPlanButton.addEventListener("click", () => addWeeklyPlanItem()
 elements.saveGithubSettingsButton.addEventListener("click", saveGitHubSettings);
 elements.saveWeeklyDraftButton.addEventListener("click", () => saveWeeklyForm("draft"));
 elements.completeWeeklyButton.addEventListener("click", () => saveWeeklyForm("completed"));
+elements.importWeeklyProgressButton.addEventListener("click", () => saveWeeklyForm("completed", true));
+elements.generateWeeklyPdfLink.addEventListener("click", (event) => {
+  if (elements.generateWeeklyPdfLink.getAttribute("aria-disabled") !== "true") return;
+  event.preventDefault();
+  showWeeklyResult("请先点击“进度导入”，更新台账后再生成 PDF 周报。", "error");
+});
 
 elements.weeklyInputPanel.addEventListener("click", (event) => {
   const addWorkButton = event.target.closest("[data-add-weekly-work]");
