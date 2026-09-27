@@ -357,20 +357,6 @@ h3 {
   font-weight: 800;
 }
 
-.weekly-form-actions .weekly-action-link[aria-disabled="true"] {
-  border-color: #c9c9c9;
-  background: #eeeeec;
-  color: #8a8a86;
-  cursor: not-allowed;
-  pointer-events: auto;
-}
-
-#importWeeklyProgressButton {
-  border-color: #315d87;
-  background: #315d87;
-  color: #fff;
-}
-
 .weekly-input-header h1 {
   margin: 0;
   color: var(--ink);

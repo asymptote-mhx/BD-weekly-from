@@ -1,5 +1,6 @@
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 const LEDGER_SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
+const WEEKLY_REPORT_DIR = "weekly";
 const STAGE_CLASS = {
   项目接触: "stage-contact",
   前期方案: "stage-plan",
@@ -94,6 +95,7 @@ const elements = {
   token: document.getElementById("githubTokenInput"),
   loadButton: document.getElementById("loadLedgerButton"),
   saveButton: document.getElementById("saveLedgerButton"),
+  importProgressButton: document.getElementById("importWeeklyProgressButton"),
   newProjectButton: document.getElementById("newProjectButton"),
   result: document.getElementById("ledgerResult"),
   summary: document.getElementById("snapshotSummary"),
@@ -105,6 +107,7 @@ const elements = {
   sortBy: document.getElementById("sortBy"),
   exportWeeklyReportButton: document.getElementById("exportWeeklyReportButton"),
   exportMeetingListButton: document.getElementById("exportMeetingListButton"),
+  weeklyPdfLink: document.getElementById("weeklyPdfLink"),
   projectCount: document.getElementById("projectCount"),
   projectList: document.getElementById("projectList"),
   detailTitle: document.getElementById("detailTitle"),
@@ -191,6 +194,17 @@ function nowText() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
+function mondayDate(date = new Date()) {
+  const monday = new Date(date);
+  const day = monday.getDay() || 7;
+  monday.setDate(monday.getDate() - day + 1);
+  return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
+}
+
+function mondayFilePrefix(date = new Date()) {
+  return mondayDate(date).replace(/-/g, "").slice(2);
+}
+
 function uniqueId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -275,7 +289,7 @@ function synchronizedPlatformProjects(snapshot) {
   snapshot.platform_resources = resources;
 }
 
-async function saveLedgerMaster() {
+async function saveLedgerMaster(commitMessage = "") {
   if (!state.snapshot || !state.sha) throw new Error("请先读取 GitHub 主档。");
   if (!masterReady()) throw new Error("当前文件仍是旧快照。请先执行 Excel → GitHub 主档迁移，避免丢失结束项目。");
   validateBrowserMaster();
@@ -290,7 +304,7 @@ async function saveLedgerMaster() {
   snapshot.progress_records = structuredClone(state.progressRecords);
   synchronizedPlatformProjects(snapshot);
   const body = {
-    message: `chore: update project ledger (${snapshot.generated_at})`,
+    message: commitMessage || `chore: update project ledger (${snapshot.generated_at})`,
     content: utf8ToBase64(JSON.stringify(snapshot, null, 2)),
     branch: config.branch,
     sha: state.sha,
@@ -317,6 +331,108 @@ async function saveLedgerMaster() {
   } finally {
     elements.saveButton.textContent = "保存到 GitHub";
     elements.saveButton.disabled = !state.dirty;
+  }
+}
+
+async function readWeeklyMarkdown(config, file) {
+  const response = await fetch(githubContentUrl(config, file.path), {headers: githubHeaders(config.token)});
+  if (!response.ok) throw new Error(`周报读取失败：${file.name}：${await responseErrorMessage(response)}`);
+  const payload = await response.json();
+  const markdown = base64ToUtf8(payload.content || "");
+  return {file, report: window.MarketWeeklyMarkdown.parse(markdown, file.name.replace(/\.md$/i, ""))};
+}
+
+async function loadCurrentWeeklyReport() {
+  if (!window.MarketWeeklyMarkdown?.parse) throw new Error("周报解析器未加载，请刷新页面后重试。");
+  const config = settings();
+  const response = await fetch(githubContentUrl(config, WEEKLY_REPORT_DIR), {headers: githubHeaders(config.token)});
+  if (!response.ok) throw new Error(`周报目录读取失败：${await responseErrorMessage(response)}`);
+  const files = (await response.json())
+    .filter((file) => file.type === "file" && file.name.toLowerCase().endsWith(".md"))
+    .sort((a, b) => b.name.localeCompare(a.name));
+  const prefix = mondayFilePrefix();
+  const preferred = files.filter((file) => file.name.startsWith(prefix));
+  const candidates = preferred.length ? preferred : files.slice(0, 12);
+  if (!candidates.length) throw new Error("没有找到可导入的周报。");
+  const reports = await Promise.all(candidates.map((file) => readWeeklyMarkdown(config, file)));
+  const currentMonday = mondayDate();
+  const current = reports
+    .filter(({report}) => report.report_date === currentMonday || (!report.report_date && report.title.startsWith(prefix)))
+    .sort((a, b) => String(b.report.updated_at || b.file.name).localeCompare(String(a.report.updated_at || a.file.name)));
+  const completed = current.find(({report}) => report.status === "completed");
+  if (completed) return completed;
+  if (current.length) throw new Error("本周周报仍是草稿，请先在周报页面点击“完成”。");
+  throw new Error(`没有找到 ${currentMonday} 这一周的周报。`);
+}
+
+function ledgerProjectForWeekly(weeklyProject) {
+  const projectId = String(weeklyProject.project_id || "").trim();
+  if (projectId) return state.projects.find((project) => field(project, "project_id") === projectId);
+  const name = String(weeklyProject.name || "").trim();
+  return state.projects.find((project) => field(project, "项目名称") === name);
+}
+
+function importWeeklyProgress(report, sourceFile) {
+  let updated = 0;
+  const skipped = [];
+  (report.projects || []).forEach((weeklyProject, index) => {
+    const project = ledgerProjectForWeekly(weeklyProject);
+    if (!project) {
+      skipped.push(String(weeklyProject.name || weeklyProject.project_id || `第 ${index + 1} 个项目`));
+      return;
+    }
+    [
+      ["业主单位", "owner_org"], ["当前进度", "progress"], ["当前细分阶段", "detail_stage"],
+      ["下一节点时间", "next_node_time"], ["状态备注", "current_update"], ["下一步工作", "next_work"],
+    ].forEach(([target, source]) => {
+      const value = String(weeklyProject[source] || "").trim();
+      if (value) project[target] = value;
+    });
+    project["最近更新时间"] = nowText();
+    const recordId = `weekly-${String(report.title || "week").replace(/[^0-9A-Za-z_-]/g, "-")}-${field(project, "project_id") || index}`;
+    const progress = {
+      record_id: recordId,
+      project_id: field(project, "project_id"),
+      更新日期: report.report_date || mondayDate(),
+      来源文件: sourceFile,
+      当前阶段: weeklyProject.detail_stage || weeklyProject.progress || "",
+      更新内容: weeklyProject.current_update || "",
+      下一步工作: weeklyProject.next_work || "",
+      下一节点时间: weeklyProject.next_node_time || "",
+      是否已确认: "是",
+    };
+    const recordIndex = state.progressRecords.findIndex((row) => field(row, "record_id") === recordId);
+    if (progress["更新内容"] || progress["下一步工作"] || progress["下一节点时间"]) {
+      if (recordIndex === -1) state.progressRecords.push(progress);
+      else state.progressRecords[recordIndex] = {...state.progressRecords[recordIndex], ...progress};
+    }
+    updated += 1;
+  });
+  return {updated, skipped};
+}
+
+async function handleProgressImport() {
+  if (!state.snapshot || !state.sha) throw new Error("请先读取 GitHub 主档。");
+  if (!masterReady()) throw new Error("当前不是可编辑的 GitHub 主档。");
+  if (state.dirty) throw new Error("页面存在尚未保存的台账修改。请先保存或读取 / 刷新，再进行进度导入。");
+  elements.importProgressButton.disabled = true;
+  elements.importProgressButton.textContent = "正在导入...";
+  showResult("正在读取本周完成稿并更新台账...", "info");
+  try {
+    const {file, report} = await loadCurrentWeeklyReport();
+    const result = importWeeklyProgress(report, file.name);
+    if (!result.updated) throw new Error("本周周报中没有可匹配的已有台账项目，未保存任何修改。");
+    state.dirty = true;
+    await saveLedgerMaster(`chore: import weekly progress from ${file.name}`);
+    refreshFilters();
+    renderAll();
+    elements.summary.textContent = `GitHub 主档 · 更新时间：${state.generatedAt || "未记录"} · 项目：${state.projects.length} · 平台公司：${platformCompanies().length}`;
+    elements.weeklyPdfLink.href = `reports.html?title=${encodeURIComponent(report.title)}`;
+    const skipped = result.skipped.length ? `；跳过 ${result.skipped.length} 个无法匹配的项目：${result.skipped.join("、")}` : "";
+    showResult(`进度导入完成：已更新 ${result.updated} 个台账项目${skipped}。现在可点击“每周周报 PDF”生成 PDF。`, result.skipped.length ? "warning" : "success");
+  } finally {
+    elements.importProgressButton.textContent = "进度导入";
+    elements.importProgressButton.disabled = !masterReady();
   }
 }
 
@@ -955,6 +1071,7 @@ async function handleLoad() {
     refreshFilters();
     renderAll();
     elements.newProjectButton.disabled = !masterReady();
+    elements.importProgressButton.disabled = !masterReady();
     elements.saveButton.disabled = true;
     const masterLabel = masterReady() ? "GitHub 主档" : "旧版只读快照";
     elements.summary.textContent = `${masterLabel} · 更新时间：${state.generatedAt || "未记录"} · 项目：${state.projects.length} · 平台公司：${platformCompanies().length}`;
@@ -969,6 +1086,11 @@ async function handleLoad() {
 }
 
 elements.loadButton.addEventListener("click", handleLoad);
+elements.importProgressButton.addEventListener("click", () => handleProgressImport().catch((error) => {
+  showResult(`进度导入失败：${error.message || error}`, "error");
+  elements.importProgressButton.textContent = "进度导入";
+  elements.importProgressButton.disabled = !masterReady();
+}));
 elements.saveButton.addEventListener("click", () => saveLedgerMaster().catch((error) => {
   showResult(error.message || String(error), "error");
   elements.saveButton.disabled = !state.dirty;
