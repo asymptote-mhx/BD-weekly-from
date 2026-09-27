@@ -317,7 +317,9 @@ async function saveLedgerMaster(commitMessage = "") {
     });
     if (!response.ok) {
       if (response.status === 409 || response.status === 422) {
-        throw new Error("保存冲突：GitHub 主档已被其他修改更新。请先读取 / 刷新，再重新修改。");
+        const conflict = new Error("保存冲突：GitHub 主档已被其他修改更新。");
+        conflict.retryableConflict = true;
+        throw conflict;
       }
       throw new Error(`保存失败：${await responseErrorMessage(response)}`);
     }
@@ -420,10 +422,22 @@ async function handleProgressImport() {
   showResult("正在读取本周完成稿并更新台账...", "info");
   try {
     const {file, report} = await loadCurrentWeeklyReport();
-    const result = importWeeklyProgress(report, file.name);
-    if (!result.updated) throw new Error("本周周报中没有可匹配的已有台账项目，未保存任何修改。");
-    state.dirty = true;
-    await saveLedgerMaster(`chore: import weekly progress from ${file.name}`);
+    let result = null;
+    let saved = false;
+    for (let attempt = 0; attempt < 3 && !saved; attempt += 1) {
+      if (attempt > 0) showResult(`检测到 GitHub 主档更新，正在读取最新版并自动重试（${attempt}/2）...`, "info");
+      await loadLedgerSnapshot();
+      if (!masterReady()) throw new Error("当前不是可编辑的 GitHub 主档。");
+      result = importWeeklyProgress(report, file.name);
+      if (!result.updated) throw new Error("本周周报中没有可匹配的已有台账项目，未保存任何修改。");
+      state.dirty = true;
+      try {
+        await saveLedgerMaster(`chore: import weekly progress from ${file.name}`);
+        saved = true;
+      } catch (error) {
+        if (!error.retryableConflict || attempt === 2) throw error;
+      }
+    }
     refreshFilters();
     renderAll();
     elements.summary.textContent = `GitHub 主档 · 更新时间：${state.generatedAt || "未记录"} · 项目：${state.projects.length} · 平台公司：${platformCompanies().length}`;
