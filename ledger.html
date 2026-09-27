@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>线上项目台账</title>
-  <link rel="stylesheet" href="styles.css?v=20260913-ledger-workflow-2">
+  <link rel="stylesheet" href="styles.css?v=20260927-ended-projects-1">
 </head>
 <body class="ledger-view-page">
   <header class="app-topbar">
@@ -72,7 +72,7 @@
           </select>
           <select id="statusFilter" aria-label="记录状态筛选">
             <option value="正常">正常项目</option>
-            <option value="已归档">已归档</option>
+            <option value="已结束">已结束项目</option>
             <option value="">全部记录</option>
           </select>
           <select id="sortBy" aria-label="排序">
@@ -99,7 +99,8 @@
           </div>
           <div class="ledger-record-actions">
             <button id="editProjectButton" type="button" disabled>编辑项目</button>
-            <button id="archiveProjectButton" type="button" disabled>归档项目</button>
+            <button id="archiveProjectButton" type="button" disabled>结束项目</button>
+            <button id="deleteProjectButton" class="danger-button" type="button" disabled>永久删除错误项目</button>
           </div>
         </header>
         <div id="detailBody" class="detail-body">
@@ -133,6 +134,6 @@
     </form>
   </dialog>
 
-  <script src="ledger_view.js?v=20260913-ledger-workflow-1"></script>
+  <script src="ledger_view.js?v=20260927-ended-projects-1"></script>
 </body>
 </html>

@@ -45,7 +45,8 @@ const PRIORITY_ORDER = ["S", "A", "B", "C"];
 const MEETING_GROUP_ORDER = ["一组", "二组", "丁德强组", "未分组项目"];
 const PROJECT_FIELD_GROUPS = [
   ["项目状态", [
-    ["项目名称", "项目名称", "text", true], ["记录状态", "记录状态", "select", false, ["正常", "已归档", "已合并", "已删除"]],
+    ["项目名称", "项目名称", "text", true], ["记录状态", "记录状态", "select", false, ["正常", "已结束", "已合并"]],
+    ["结束原因", "结束原因", "select", false, ["未中标", "商务评价放弃"]],
     ["项目优先级", "项目优先级", "select", false, ["S", "A", "B", "C"]], ["数据确认状态", "数据确认状态"],
     ["当前进度", "当前进度", "select", false, Object.keys(STAGE_CLASS)], ["当前细分阶段", "当前细分阶段", "select", false, STAGE_ORDER],
     ["下一节点时间", "下一节点时间", "date"], ["内部负责人", "内部负责人"], ["状态备注", "状态备注", "textarea", true],
@@ -111,6 +112,7 @@ const elements = {
   detailBody: document.getElementById("detailBody"),
   editProjectButton: document.getElementById("editProjectButton"),
   archiveProjectButton: document.getElementById("archiveProjectButton"),
+  deleteProjectButton: document.getElementById("deleteProjectButton"),
   projectEditorDialog: document.getElementById("projectEditorDialog"),
   projectEditorForm: document.getElementById("projectEditorForm"),
   projectEditorFields: document.getElementById("projectEditorFields"),
@@ -275,7 +277,7 @@ function synchronizedPlatformProjects(snapshot) {
 
 async function saveLedgerMaster() {
   if (!state.snapshot || !state.sha) throw new Error("请先读取 GitHub 主档。");
-  if (!masterReady()) throw new Error("当前文件仍是旧快照。请先执行 Excel → GitHub 主档迁移，避免丢失归档项目。");
+  if (!masterReady()) throw new Error("当前文件仍是旧快照。请先执行 Excel → GitHub 主档迁移，避免丢失结束项目。");
   validateBrowserMaster();
   const config = settings();
   if (!config.token) throw new Error("请先填写 GitHub token。");
@@ -388,7 +390,8 @@ function renderPlatformSection(project) {
 }
 
 function recordStatus(project) {
-  return field(project, "记录状态") || "正常";
+  const status = field(project, "记录状态") || "正常";
+  return status === "已归档" ? "已结束" : status;
 }
 
 function isActiveProject(project) {
@@ -505,8 +508,8 @@ function cardClass(project) {
 
 function renderProjectList() {
   const normalCount = state.projects.filter((project) => recordStatus(project) === "正常").length;
-  const archivedCount = state.projects.filter((project) => recordStatus(project) === "已归档").length;
-  elements.projectCount.textContent = `当前 ${state.filtered.length} 个；正常 ${normalCount} 个，已归档 ${archivedCount} 个，总计 ${state.projects.length} 个`;
+  const endedCount = state.projects.filter((project) => recordStatus(project) === "已结束").length;
+  elements.projectCount.textContent = `当前 ${state.filtered.length} 个；正常 ${normalCount} 个，已结束 ${endedCount} 个，总计 ${state.projects.length} 个`;
   if (!state.filtered.length) {
     elements.projectList.innerHTML = '<div class="empty-state">没有匹配的项目。</div>';
     return;
@@ -555,6 +558,7 @@ function renderKeyGrid(project) {
     ["是否需要技术介入", field(project, "是否需要技术介入")],
     ["技术配合组", field(project, "技术配合类型")],
     ["负责人", field(project, "内部负责人")],
+    ...(recordStatus(project) === "已结束" ? [["结束原因", field(project, "结束原因")]] : []),
   ];
   return `<div class="detail-grid">${items.map(([label, value]) => metric(label, value)).join("")}</div>`;
 }
@@ -822,19 +826,12 @@ function openProjectEditor(project = null) {
     showResult("当前还是旧快照，请先完成 GitHub 主档迁移。", "error");
     return;
   }
-  const current = project || {"记录状态": "正常", "当前进度": "项目接触", "当前细分阶段": "线索获取"};
+  const current = project ? {...project, "记录状态": recordStatus(project)} : {"记录状态": "正常", "当前进度": "项目接触", "当前细分阶段": "线索获取"};
   const projectId = field(current, "project_id");
-  const bundle = projectId ? (state.details[projectId] || {}) : {};
-  const detail = bundle.detail || {};
-  const sensitive = bundle.sensitive || {};
-  const structured = bundle.structured || {};
   elements.projectEditorTitle.textContent = projectId ? `编辑：${field(current, "项目名称") || projectId}` : "新建项目";
   elements.projectEditorDialog.dataset.projectId = projectId;
   const groups = PROJECT_FIELD_GROUPS.map(([title, specs]) => `<section class="ledger-editor-group"><h3>${escapeHtml(title)}</h3><div class="ledger-editor-grid">${specs.map((spec) => editorControl(spec, current[spec[0]] || "")).join("")}</div></section>`);
   groups.push(renderPlatformEditor(current));
-  groups.push(`<section class="ledger-editor-group"><h3>项目详情</h3><div class="ledger-editor-grid">${DETAIL_FIELDS.map(([key, label]) => editorControl([key, label, "textarea", true], detail[key] || "", "detail")).join("")}</div></section>`);
-  groups.push(`<section class="ledger-editor-group"><h3>敏感商务</h3><div class="ledger-editor-grid">${SENSITIVE_FIELDS.map(([key, label]) => editorControl([key, label, "textarea", true], sensitive[key] || "", "sensitive")).join("")}</div></section>`);
-  groups.push(structuredEditor(projectId, structured));
   elements.projectEditorFields.innerHTML = groups.join("");
   elements.projectEditorDialog.showModal();
 }
@@ -856,39 +853,18 @@ function submitProjectEditor(event) {
   const oldProject = state.projects.find((row) => field(row, "project_id") === oldId) || {};
   const projectId = oldId || uniqueId("project");
   const project = {...oldProject, project_id: projectId};
-  const oldBundle = state.details[projectId] || {};
-  const bundle = structuredClone(oldBundle);
-  bundle.detail = bundle.detail || {project_id: projectId};
-  bundle.sensitive = bundle.sensitive || {project_id: projectId};
-  bundle.structured = bundle.structured || {chain_people: [], marketing_events: [], competitors: []};
   for (const input of elements.projectEditorFields.querySelectorAll("[data-editor-source][data-editor-key]")) {
     const source = input.dataset.editorSource;
     const key = input.dataset.editorKey;
     const value = input.value.trim();
     if (source === "project") project[key] = value;
-    if (source === "detail") bundle.detail[key] = value;
-    if (source === "sensitive") bundle.sensitive[key] = value;
-    if (source === "structured") {
-      const map = {
-        chain_people: [["姓名", "单位", "职务", "电话", "权重", "备注"], "chain-person"],
-        marketing_events: [["日期", "内容"], "visit"],
-        competitors: [["竞争对手", "条线关系", "备注"], "competitor"],
-      };
-      const [fields, prefix] = map[key];
-      bundle.structured[key] = parseStructuredLines(value, fields, bundle.structured[key], projectId, prefix);
-    }
   }
   if (!field(project, "项目名称")) return;
   syncProjectPlatformLinks(project);
   project["记录状态"] = field(project, "记录状态") || "正常";
   project["最近更新时间"] = nowText();
-  bundle.detail.project_id = projectId;
-  bundle.detail["最近更新时间"] = nowText();
-  bundle.sensitive.project_id = projectId;
-  bundle.sensitive["最近更新时间"] = nowText();
   const index = state.projects.findIndex((row) => field(row, "project_id") === projectId);
   if (index === -1) state.projects.unshift(project); else state.projects[index] = project;
-  state.details[projectId] = bundle;
   state.selectedProjectId = projectId;
   markDirty(index === -1 ? "新项目已暂存，点击“保存到 GitHub”后生效。" : undefined);
   elements.projectEditorDialog.close();
@@ -947,10 +923,6 @@ function renderProjectDetail() {
     return;
   }
   const id = field(project, "project_id");
-  const detail = state.details[id] || {};
-  const sensitive = detail.sensitive || {};
-  const freeDetail = detail.detail || {};
-  const structured = detail.structured || {};
   elements.detailTitle.textContent = field(project, "项目名称") || "未命名项目";
   elements.detailSubtitle.textContent = `${field(project, "地区") || "未填地区"} · ${field(project, "当前进度") || "未填进度"} · ${field(project, "当前细分阶段") || "未填阶段"}`;
   elements.detailBody.innerHTML = `
@@ -958,12 +930,6 @@ function renderProjectDetail() {
     ${renderPlatformSection(project)}
     <section class="work-item">${escapeHtml(field(project, "下一步工作") || "暂无下一步工作。")}</section>
     ${renderProgressSection(id)}
-    <div class="detail-chain-preview">
-      ${section("备注", field(project, "备注"))}
-      ${section("业主决策链条", freeDetail["业主决策链条"] || sensitive["业主决策链条"])}
-      ${section("历史沟通", freeDetail["历史沟通"] || sensitive["历史沟通"])}
-      ${renderObjectTable("结构化详情", structured)}
-    </div>
   `;
 }
 
@@ -977,7 +943,8 @@ function renderAll() {
   const selected = state.projects.find((row) => field(row, "project_id") === state.selectedProjectId);
   elements.editProjectButton.disabled = !selected || !masterReady();
   elements.archiveProjectButton.disabled = !selected || !masterReady();
-  elements.archiveProjectButton.textContent = selected && recordStatus(selected) === "已归档" ? "恢复项目" : "归档项目";
+  elements.deleteProjectButton.disabled = !selected || !masterReady();
+  elements.archiveProjectButton.textContent = selected && recordStatus(selected) === "已结束" ? "恢复项目" : "结束项目";
 }
 
 async function handleLoad() {
@@ -993,7 +960,7 @@ async function handleLoad() {
     elements.summary.textContent = `${masterLabel} · 更新时间：${state.generatedAt || "未记录"} · 项目：${state.projects.length} · 平台公司：${platformCompanies().length}`;
     showResult(masterReady()
       ? `已读取 ${state.projects.length} 个台账项目，可在线维护。`
-      : "已读取旧版快照。为防止归档数据丢失，编辑功能已锁定，请先执行主档迁移。", masterReady() ? "success" : "warning");
+      : "已读取旧版快照。为防止结束项目数据丢失，编辑功能已锁定，请先执行主档迁移。", masterReady() ? "success" : "warning");
   } catch (error) {
     showResult(`读取失败：${error.message || error}`, "error");
   } finally {
@@ -1014,13 +981,34 @@ elements.editProjectButton.addEventListener("click", () => {
 elements.archiveProjectButton.addEventListener("click", () => {
   const project = state.projects.find((row) => field(row, "project_id") === state.selectedProjectId);
   if (!project) return;
-  const restoring = recordStatus(project) === "已归档";
-  const action = restoring ? "恢复" : "归档";
-  if (!confirm(`确定${action}“${field(project, "项目名称")}”吗？`)) return;
-  project["记录状态"] = restoring ? "正常" : "已归档";
+  const restoring = recordStatus(project) === "已结束";
+  let reason = "";
+  if (!restoring) {
+    reason = prompt("请选择结束原因并输入：未中标 或 商务评价放弃", field(project, "结束原因"));
+    if (reason === null) return;
+    reason = reason.trim();
+    if (!["未中标", "商务评价放弃"].includes(reason)) { showResult("结束原因必须是“未中标”或“商务评价放弃”。", "error"); return; }
+  }
+  const action = restoring ? "恢复" : "结束";
+  if (!confirm(`确定${action}“${field(project, "项目名称")}”吗？${reason ? `结束原因：${reason}` : ""}`)) return;
+  project["记录状态"] = restoring ? "正常" : "已结束";
+  project["结束原因"] = restoring ? "" : reason;
   project["最近更新时间"] = nowText();
   markDirty(`项目已${action}并暂存，点击“保存到 GitHub”后生效。`);
   renderAll();
+});
+elements.deleteProjectButton.addEventListener("click", () => {
+  const project = state.projects.find((row) => field(row, "project_id") === state.selectedProjectId);
+  if (!project || !confirm(`确认永久删除错误项目“${field(project, "项目名称")}”？项目、推进记录和平台关联将从主档删除；GitHub 历史仍可追溯。`)) return;
+  const projectId = field(project, "project_id");
+  state.projects = state.projects.filter((row) => field(row, "project_id") !== projectId);
+  state.progressRecords = state.progressRecords.filter((row) => field(row, "project_id") !== projectId);
+  delete state.details[projectId];
+  const resources = state.snapshot.platform_resources || {};
+  resources.project_platform_links = (resources.project_platform_links || []).filter((row) => field(row, "project_id") !== projectId);
+  state.selectedProjectId = "";
+  markDirty("错误项目已删除并暂存，点击“保存到 GitHub”后永久生效。");
+  refreshFilters(); renderAll();
 });
 elements.projectEditorForm.addEventListener("submit", submitProjectEditor);
 elements.progressEditorForm.addEventListener("submit", submitProgressEditor);

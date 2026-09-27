@@ -22,6 +22,8 @@ const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 const LEDGER_SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
 const state = {
   ledgerProjects: [],
+  ledgerSnapshot: null,
+  ledgerSnapshotSha: "",
   platformResources: { platform_companies: [], platform_chain_people: [], project_platform_links: [] },
 };
 
@@ -136,6 +138,7 @@ function weeklyFormPayloadToMarkdown(payload) {
     if (!project.name) return;
     lines.push("", `### ${project.name}`);
     [
+      ["项目ID", project.project_id],
       ["业主单位", project.owner_org],
       ["地区", project.region],
       ["技术配合组", project.technical_group],
@@ -278,6 +281,8 @@ async function loadLedgerProjects() {
   if (!response.ok) throw new Error(`台账快照读取失败：${await responseErrorMessage(response)}`);
   const file = await response.json();
   const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
+  state.ledgerSnapshot = snapshot;
+  state.ledgerSnapshotSha = file.sha || "";
   state.ledgerProjects = Array.isArray(snapshot.projects) ? snapshot.projects.filter(isActiveLedgerProject) : [];
   state.platformResources = snapshot.platform_resources || state.platformResources;
   document.querySelectorAll("[data-ledger-project]").forEach((select) => {
@@ -364,6 +369,71 @@ async function putWeeklyToGitHub(payload, settings) {
     throw error;
   }
   return { file: fileName, path };
+}
+
+function weeklyLedgerProject(payloadProject, projects) {
+  const projectId = String(payloadProject.project_id || "").trim();
+  if (projectId) return projects.find((project) => String(project.project_id || "") === projectId);
+  const name = String(payloadProject.name || "").trim();
+  return projects.find((project) => String(project["项目名称"] || "").trim() === name);
+}
+
+async function updateLedgerFromWeeklyPayload(payload, settings, retry = true) {
+  const response = await fetch(githubContentUrl(settings, LEDGER_SNAPSHOT_PATH), {headers: githubHeaders(settings.token)});
+  if (!response.ok) throw new Error(`台账主档读取失败：${await responseErrorMessage(response)}`);
+  const file = await response.json();
+  const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
+  const projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
+  const progressRecords = Array.isArray(snapshot.progress_records) ? snapshot.progress_records : [];
+  let updated = 0;
+  (payload.projects || []).forEach((weeklyProject, index) => {
+    const project = weeklyLedgerProject(weeklyProject, projects);
+    if (!project) return;
+    const mappings = [
+      ["业主单位", "owner_org"], ["当前进度", "progress"], ["当前细分阶段", "detail_stage"],
+      ["下一节点时间", "next_node_time"], ["状态备注", "current_update"],
+    ];
+    mappings.forEach(([target, source]) => {
+      const value = String(weeklyProject[source] || "").trim();
+      if (value) project[target] = value;
+    });
+    project["最近更新时间"] = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const recordId = `weekly-${String(payload.title || "week").replace(/[^0-9A-Za-z_-]/g, "-")}-${project.project_id || index}`;
+    const progress = {
+      record_id: recordId,
+      project_id: project.project_id,
+      更新日期: weekMondayFromTitle(payload.title),
+      来源文件: `${payload.title}.md`,
+      当前阶段: weeklyProject.detail_stage || weeklyProject.progress || "",
+      更新内容: weeklyProject.current_update || "",
+      下一步工作: weeklyProject.next_work || "",
+      下一节点时间: weeklyProject.next_node_time || "",
+      是否已确认: "是",
+    };
+    const recordIndex = progressRecords.findIndex((row) => String(row.record_id || "") === recordId);
+    if (progress.current_update || progress["更新内容"] || progress["下一步工作"] || progress["下一节点时间"]) {
+      if (recordIndex === -1) progressRecords.push(progress); else progressRecords[recordIndex] = {...progressRecords[recordIndex], ...progress};
+    }
+    updated += 1;
+  });
+  snapshot.projects = projects;
+  snapshot.progress_records = progressRecords;
+  snapshot.generated_at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  if (snapshot.platform_resources) {
+    snapshot.platform_resources.projects = structuredClone(projects);
+    const linkedIds = new Set((snapshot.platform_resources.project_platform_links || []).map((row) => String(row.project_id || "")));
+    snapshot.platform_resources.unassigned_projects = projects.filter((project) => isActiveLedgerProject(project) && !linkedIds.has(String(project.project_id || "")));
+  }
+  const saveResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${LEDGER_SNAPSHOT_PATH}`, {
+    method: "PUT",
+    headers: githubHeaders(settings.token),
+    body: JSON.stringify({message: `Update ledger from ${payload.title}`, content: utf8ToBase64(JSON.stringify(snapshot, null, 2)), branch: settings.branch, sha: file.sha}),
+  });
+  if (!saveResponse.ok) {
+    if (retry && (saveResponse.status === 409 || saveResponse.status === 422)) return updateLedgerFromWeeklyPayload(payload, settings, false);
+    throw new Error(`台账主档更新失败：${await responseErrorMessage(saveResponse)}`);
+  }
+  return updated;
 }
 
 async function loadWeeklyFromGitHub() {
@@ -500,7 +570,7 @@ function parseWeeklyMarkdownToPayload(markdown, fallbackTitle = "") {
       let lastField = "";
       lines.forEach((line) => {
         const [label, value] = parseKeyValueLine(line);
-        const fields = { 业主单位: "owner_org", 地区: "region", 技术配合组: "technical_group", 当前进度: "progress", 当前细分阶段: "detail_stage", 本周进展: "current_update", 下一步工作: "next_work", 下一节点时间: "next_node_time", 关联项目: "related_project", 备注: "note" };
+        const fields = { 项目ID: "project_id", 业主单位: "owner_org", 地区: "region", 技术配合组: "technical_group", 当前进度: "progress", 当前细分阶段: "detail_stage", 本周进展: "current_update", 下一步工作: "next_work", 下一节点时间: "next_node_time", 关联项目: "related_project", 备注: "note" };
         const field = fields[label];
         if (field) { project[field] = value; lastField = field; return; }
         if (label === "下周工作") { project.next_week_work = parseNextWeekWork(value); lastField = ""; return; }
@@ -719,7 +789,7 @@ function addLedgerWeeklyProjectRow(row = {}, options = {}) {
     <div class="weekly-project-grid" data-weekly-mode="ledger">
       <label class="full-width">台账项目<select data-ledger-project>${ledgerProjectOptions(row.project_id || "")}</select></label>
       <label>项目名称<input data-weekly-field="name" readonly value="${escapeHtml(row.name || "")}"></label>
-      <label>业主单位<input data-weekly-field="owner_org" readonly value="${escapeHtml(row.owner_org || "")}"></label>
+      <label>业主单位<input data-weekly-field="owner_org" value="${escapeHtml(row.owner_org || "")}"></label>
       <label>地区<input data-weekly-field="region" readonly value="${escapeHtml(row.region || "")}"></label>
       <label>技术配合组<select data-weekly-field="technical_group" disabled>${optionHtml(TECHNICAL_GROUP_OPTIONS, row.technical_group || "")}</select></label>
       <label>当前进度<select data-weekly-field="progress">${optionHtml(WEEKLY_PROGRESS_OPTIONS, row.progress || "项目接触")}</select></label>
@@ -948,6 +1018,8 @@ function collectWeeklyRows(container) {
     row.querySelectorAll("[data-weekly-field]").forEach((input) => {
       values[input.dataset.weeklyField] = input.value.trim();
     });
+    const ledgerProject = row.querySelector("[data-ledger-project]");
+    if (ledgerProject?.value) values.project_id = ledgerProject.value;
     const workItems = [...row.querySelectorAll("[data-weekly-work-item]")]
       .map((input) => input.value.trim())
       .filter(Boolean);
@@ -1017,7 +1089,12 @@ async function saveWeeklyForm(status = "draft") {
     const payload = collectWeeklyForm(status);
     if (isGitHubSaveMode()) {
       const data = await saveWeeklyToGitHub(payload);
-      showWeeklyResult(status === "completed" ? `已完成并保存到 GitHub：${data.file}。` : `已暂存到 GitHub：${data.file}。`, "success");
+      if (status === "completed") {
+        const updated = await updateLedgerFromWeeklyPayload(payload, collectGitHubSettings());
+        showWeeklyResult(`已完成并保存到 GitHub：${data.file}；同时更新 ${updated} 个台账项目。`, "success");
+      } else {
+        showWeeklyResult(`已暂存到 GitHub：${data.file}。`, "success");
+      }
       return;
     }
     const response = await fetch("/api/weekly/form", {

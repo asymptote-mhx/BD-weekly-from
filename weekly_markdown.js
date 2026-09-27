@@ -83,7 +83,7 @@
     const lines = block.split(/\r?\n/);
     const project = {name: clean(lines.shift()), next_week_work: []};
     let lastField = "";
-    const fields = {业主单位:"owner_org",地区:"region",技术配合组:"technical_group",当前进度:"progress",当前细分阶段:"detail_stage",本周进展:"current_update",下一步工作:"next_work",下一节点时间:"next_node_time",关联项目:"related_project",备注:"note"};
+    const fields = {项目ID:"project_id",业主单位:"owner_org",地区:"region",技术配合组:"technical_group",当前进度:"progress",当前细分阶段:"detail_stage",本周进展:"current_update",下一步工作:"next_work",下一节点时间:"next_node_time",关联项目:"related_project",备注:"note"};
     lines.forEach((line) => {
       const [label, value] = parseKeyValueLine(line);
       const key = fields[label];
