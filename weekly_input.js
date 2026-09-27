@@ -15,7 +15,7 @@ const DETAIL_STAGES = [
 
 const TECHNICAL_GROUP_OPTIONS = ["", "一组", "二组", "丁德强团队", "王启宇团队", "自行填写"];
 const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程", "维护服务"];
-const UAD_VISIT_PARTICIPANTS = ["毛瀚轩", "杨鹏", "胡彦之", "张涵舒"];
+const UAD_VISIT_PARTICIPANTS = ["毛瀚轩", "杨鹏", "胡彦之", "楚冉"];
 const PLATFORM_SORT = window.MarketPlatformSort;
 const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-plan-project";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
