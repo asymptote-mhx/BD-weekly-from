@@ -43,6 +43,8 @@ const PROGRESS_BY_STAGE = {
   衔接下阶段招标: "维护服务",
 };
 const PRIORITY_ORDER = ["S", "A", "B", "C"];
+const TECHNICAL_GROUP_PRESETS = ["一组", "二组", "丁德强团队", "王启宇团队"];
+const TECHNICAL_GROUP_OPTIONS = [...TECHNICAL_GROUP_PRESETS, "外部团队"];
 const MEETING_GROUP_ORDER = ["一组", "二组", "丁德强组", "未分组项目"];
 const PROJECT_FIELD_GROUPS = [
   ["项目状态", [
@@ -60,7 +62,7 @@ const PROJECT_FIELD_GROUPS = [
     ["策划范围或设计范围", "策划范围或设计范围", "textarea", true], ["总投资", "总投资"], ["预估合同额", "预估合同额"],
   ]],
   ["协同与关联", [
-    ["是否需要技术介入", "是否需要技术介入"], ["技术配合类型", "技术配合组"],
+    ["是否需要技术介入", "是否需要技术介入"], ["技术配合类型", "技术配合组", "select", false, TECHNICAL_GROUP_OPTIONS],
     ["主项目ID", "主项目 ID"], ["主项目名称", "主项目名称"], ["关联原因", "关联原因", "textarea", true],
     ["直接业主单位ID", "直接业主单位 ID"], ["平台归属确认状态", "平台归属确认状态"],
   ]],
@@ -930,7 +932,16 @@ function editorControl(spec, value, source = "project") {
   const attrs = `data-editor-source="${source}" data-editor-key="${escapeHtml(key)}"`;
   let control;
   if (type === "select") {
-    control = `<select ${attrs}><option value="">未选择</option>${options.map((option) => `<option value="${escapeHtml(option)}"${String(value || "") === option ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select>`;
+    const current = String(value || "");
+    if (key === "技术配合类型") {
+      const isExternal = Boolean(current) && !TECHNICAL_GROUP_PRESETS.includes(current);
+      const selected = isExternal ? "外部团队" : current;
+      control = `<select ${attrs}><option value="">未选择</option>${options.map((option) => `<option value="${escapeHtml(option)}"${selected === option ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select>`;
+      return `<label class="${wide ? "wide" : ""}">${escapeHtml(label)}${control}</label><label id="externalTechnicalGroupLabel"${selected === "外部团队" ? "" : " hidden"}>外部团队名称<input id="externalTechnicalGroupInput" value="${escapeHtml(isExternal ? current : "")}" autocomplete="off" placeholder="请填写团队名称"></label>`;
+    }
+    const legacyOption = current && !options.includes(current)
+      ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}（当前值）</option>` : "";
+    control = `<select ${attrs}><option value="">未选择</option>${legacyOption}${options.map((option) => `<option value="${escapeHtml(option)}"${current === option ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select>`;
   } else if (type === "textarea") {
     control = `<textarea ${attrs} rows="3">${escapeHtml(value)}</textarea>`;
   } else {
@@ -988,6 +999,15 @@ function submitProjectEditor(event) {
     const key = input.dataset.editorKey;
     const value = input.value.trim();
     if (source === "project") project[key] = value;
+  }
+  if (project["技术配合类型"] === "外部团队") {
+    const externalName = document.getElementById("externalTechnicalGroupInput")?.value.trim() || "";
+    if (!externalName) {
+      showResult("请填写外部团队名称。", "error");
+      document.getElementById("externalTechnicalGroupInput")?.focus();
+      return;
+    }
+    project["技术配合类型"] = externalName;
   }
   if (!field(project, "项目名称")) return;
   syncProjectPlatformLinks(project);
@@ -1147,6 +1167,15 @@ elements.deleteProjectButton.addEventListener("click", () => {
   refreshFilters(); renderAll();
 });
 elements.projectEditorForm.addEventListener("submit", submitProjectEditor);
+elements.projectEditorFields.addEventListener("change", (event) => {
+  if (event.target.dataset.editorKey !== "技术配合类型") return;
+  const externalLabel = document.getElementById("externalTechnicalGroupLabel");
+  if (externalLabel) externalLabel.hidden = event.target.value !== "外部团队";
+  if (event.target.value !== "外部团队") {
+    const input = document.getElementById("externalTechnicalGroupInput");
+    if (input) input.value = "";
+  }
+});
 elements.progressEditorForm.addEventListener("submit", submitProgressEditor);
 document.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
 elements.exportWeeklyReportButton.addEventListener("click", exportWeeklyReportMarkdown);
