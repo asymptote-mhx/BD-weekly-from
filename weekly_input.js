@@ -318,8 +318,9 @@ async function refreshWeeklyResources(options = {}) {
 }
 
 async function existingGitHubFileSha(settings, path) {
-  const url = `https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${path}?ref=${encodeURIComponent(settings.branch)}`;
-  const response = await fetch(url, { headers: githubHeaders(settings.token) });
+  const cacheKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const url = `https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${path}?ref=${encodeURIComponent(settings.branch)}&_=${cacheKey}`;
+  const response = await fetch(url, { headers: githubHeaders(settings.token), cache: "no-store" });
   if (response.status === 404) return "";
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response));
@@ -338,12 +339,22 @@ async function saveWeeklyToGitHub(payload) {
 }
 
 async function saveWeeklyToGitHubWithRetry(payload, settings) {
-  try {
-    return await putWeeklyToGitHub(payload, settings);
-  } catch (error) {
-    if (!error.retryableConflict) throw error;
-    return putWeeklyToGitHub(payload, settings);
+  const maxAttempts = 3;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await putWeeklyToGitHub(payload, settings);
+    } catch (error) {
+      if (!error.retryableConflict) throw error;
+      lastError = error;
+      if (attempt === maxAttempts) break;
+      showWeeklyResult(`检测到周报已被更新，正在读取最新版本并自动重试（${attempt}/${maxAttempts - 1}）...`, "info");
+      await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+    }
   }
+  const conflict = new Error(`周报在保存期间被连续更新，自动重试仍未成功。请重新读取周报后再保存。${lastError?.message ? `（${lastError.message}）` : ""}`);
+  conflict.retryableConflict = true;
+  throw conflict;
 }
 
 async function putWeeklyToGitHub(payload, settings) {
@@ -365,7 +376,9 @@ async function putWeeklyToGitHub(payload, settings) {
   if (!response.ok) {
     const message = await responseErrorMessage(response);
     const error = new Error(message);
-    error.retryableConflict = response.status === 409 || message.includes("does not match");
+    error.retryableConflict = response.status === 409
+      || (response.status === 422 && /sha|does not match/i.test(message))
+      || /does not match/i.test(message);
     throw error;
   }
   return { file: fileName, path };
