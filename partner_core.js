@@ -29,5 +29,18 @@
     const sharing=records.filter(r=>['主动提供','询问后回复'].includes(r.sharing));
     return {accuracyTotal:accuracy.length,accurate:accuracy.filter(r=>r.accuracy==='准确').length,timingTotal:timing.length,timely:timing.filter(r=>r.timely).length,sharingTotal:sharing.length,proactive:sharing.filter(r=>r.sharing==='主动提供').length};
   }
-  return {STAGES,stageFor,projectCount,informationStats,esc,validate,counts,forProject,upsertLink,href};
+  function boardRelations(board,partnerId){
+    if(!board)return null;
+    const nodes=board.nodes||[],edges=board.edges||[],starts=nodes.filter(n=>n.type==='合作方'&&(n.partner_id===partnerId||n.name===partnerId));
+    if(!starts.length)return null;
+    const results=new Map(),byId=new Map(nodes.map(n=>[n.id,n]));
+    const visited=new Set(starts.map(n=>n.id));const queue=starts.map(n=>({node:n,path:[n.id],edges:[]}));
+    while(queue.length){const item=queue.shift();for(const edge of edges){if(edge.kind==='决策链条')continue;const other=edge.from===item.node.id?edge.to:edge.to===item.node.id?edge.from:null;if(!other||item.path.includes(other))continue;const target=byId.get(other);if(!target)continue;const pathEdges=[...item.edges,edge],path=[...item.path,other];if(target.type==='合作方'){if(!visited.has(other)){visited.add(other);queue.push({node:target,path,edges:pathEdges});}continue;}
+      const text=(target.name||'')+' '+(target.position||'');
+      const level=/副区长|区长|区委书记|区书记/.test(text)?'区级政府领导':/副市长|市长|市委书记/.test(text)?'市级政府领导':['使用方','招标代理'].includes(target.type)?'实操平台':/政府|卫健|卫生|局|委|处/.test(text)||['主管部门','分管部门'].includes(target.type)?'政府职能部门':'实操平台';
+      const record={from:partnerId,to:[target.name,target.person,target.position].filter(Boolean).join(' · '),level,category:level==='实操平台'?'其他机构':'政府',distance:pathEdges.length===1&&edge.distance!=='间接'?'直接':'间接',verification:pathEdges.every(e=>e.verification==='已验证')?'已验证':pathEdges.some(e=>e.verification==='存疑')?'存疑':'待验证',label:pathEdges.map(e=>e.evidence||e.label).filter(Boolean).join('；'),path:path.map(id=>byId.get(id)?.name).join(' → '),board_node_id:target.id};
+      const previous=results.get(other);if(!previous||record.distance==='直接'&&previous.distance!=='直接')results.set(other,record);
+    }}return [...results.values()];
+  }
+  return {boardRelations,STAGES,stageFor,projectCount,informationStats,esc,validate,counts,forProject,upsertLink,href};
 });
