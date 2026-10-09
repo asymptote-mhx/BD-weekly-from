@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>历史周报与工作小结</title>
-  <link rel="stylesheet" href="reports.css?v=20260913-online-reports-1">
+  <link rel="stylesheet" href="reports.css?v=20261009-history-search-1">
 </head>
 <body>
   <header class="app-topbar no-print">
@@ -33,6 +33,10 @@
     <section class="reports-layout">
       <aside class="history-panel no-print">
         <header><h2>历史周报</h2><span id="historyCount">0 份</span></header>
+        <label class="history-search" for="historySearchInput">
+          <span>关键词搜索</span>
+          <input id="historySearchInput" type="search" autocomplete="off" placeholder="搜索标题、项目、单位、人员或内容">
+        </label>
         <div id="historyList" class="history-list"><p class="empty">尚未读取周报。</p></div>
       </aside>
 
@@ -43,6 +47,6 @@
   </main>
 
   <script src="weekly_markdown.js?v=20260913-online-reports-1"></script>
-  <script src="reports.js?v=20260913-online-reports-1"></script>
+  <script src="reports.js?v=20261009-history-search-1"></script>
 </body>
 </html>

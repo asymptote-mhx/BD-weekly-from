@@ -3,7 +3,7 @@ const MASTER_PATH = "ledger/market_workbench_snapshot.json";
 const parser = window.MarketWeeklyMarkdown;
 const state = {reports:[], selectedIndex:-1, master:{platform_resources:{}}};
 const $ = (selector) => document.querySelector(selector);
-const elements = {owner:$("#githubOwnerInput"),repo:$("#githubRepoInput"),branch:$("#githubBranchInput"),token:$("#githubTokenInput"),load:$("#loadReportsButton"),includeDrafts:$("#includeDraftsInput"),exportPdf:$("#exportPdfButton"),downloadMarkdown:$("#downloadMarkdownButton"),summary:$("#historySummary"),count:$("#historyCount"),list:$("#historyList"),paper:$("#reportPaper"),result:$("#reportsResult")};
+const elements = {owner:$("#githubOwnerInput"),repo:$("#githubRepoInput"),branch:$("#githubBranchInput"),token:$("#githubTokenInput"),load:$("#loadReportsButton"),includeDrafts:$("#includeDraftsInput"),search:$("#historySearchInput"),exportPdf:$("#exportPdfButton"),downloadMarkdown:$("#downloadMarkdownButton"),summary:$("#historySummary"),count:$("#historyCount"),list:$("#historyList"),paper:$("#reportPaper"),result:$("#reportsResult")};
 
 function escapeHtml(value){return String(value??"").replace(/[&<>'"]/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));}
 function clean(value){return String(value||"").trim();}
@@ -19,7 +19,11 @@ async function readText(config,path){const response=await fetch(apiUrl(config,pa
 
 function reportDate(report){return report.payload.report_date||report.name.match(/^(\d{6})/)?.[1]||"";}
 function formatPeriod(value){const text=clean(value);const match=text.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!match)return text||"周次未识别";const start=new Date(`${text}T00:00:00`);const end=new Date(start);end.setDate(end.getDate()+6);return `${start.getFullYear()}年${start.getMonth()+1}月${start.getDate()}日至${end.getMonth()+1}月${end.getDate()}日`;}
-function filteredReports(){return state.reports.filter((report)=>elements.includeDrafts.checked||report.payload.status==="completed");}
+function historySearchTerms(){return clean(elements.search?.value).toLocaleLowerCase("zh-CN").split(/\s+/).filter(Boolean);}
+function reportSearchText(report){return [report.name,report.payload.title||"",report.markdown||""].join("\n").toLocaleLowerCase("zh-CN");}
+function filteredReports(){const terms=historySearchTerms();return state.reports.filter((report)=>(elements.includeDrafts.checked||report.payload.status==="completed")&&(!terms.length||terms.every((term)=>reportSearchText(report).includes(term))));}
+function applyHistorySearch(){renderHistory();const visible=filteredReports();if(!visible.includes(selectedReport())){state.selectedIndex=visible.length?state.reports.indexOf(visible[0]):-1;renderReport(selectedReport());}}
+elements.search.addEventListener("input",applyHistorySearch);
 function selectedReport(){return state.reports[state.selectedIndex]||null;}
 function renderHistory(){const reports=filteredReports();elements.count.textContent=`${reports.length} 份`;if(!reports.length){elements.list.innerHTML='<p class="empty">没有符合条件的周报。</p>';return;}elements.list.innerHTML=reports.map((report)=>{const index=state.reports.indexOf(report);return `<button class="history-item${index===state.selectedIndex?" active":""}" data-report-index="${index}"><strong>${escapeHtml(report.payload.title||report.name.replace(/\.md$/i,""))}</strong><span>${escapeHtml(formatPeriod(report.payload.report_date))}</span><span class="status-badge ${report.payload.status}">${report.payload.status==="completed"?"完成稿":"草稿"}</span></button>`;}).join("");}
 function metric(label,value){return `<div class="metric"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`;}
