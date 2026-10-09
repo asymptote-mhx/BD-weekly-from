@@ -90,6 +90,7 @@ const state = {
   dirty: false,
   projectBoards: {},
   projectBoardLoadError: "",
+  weeklyReports: [],
 };
 
 const elements = {
@@ -126,6 +127,12 @@ const elements = {
   projectEditorTitle: document.getElementById("projectEditorTitle"),
   progressEditorDialog: document.getElementById("progressEditorDialog"),
   progressEditorForm: document.getElementById("progressEditorForm"),
+  weeklyImportDialog: document.getElementById("weeklyImportDialog"),
+  weeklyImportForm: document.getElementById("weeklyImportForm"),
+  weeklyImportSearch: document.getElementById("weeklyImportSearch"),
+  weeklyImportReportSelect: document.getElementById("weeklyImportReportSelect"),
+  weeklyImportSummary: document.getElementById("weeklyImportSummary"),
+  confirmWeeklyImportButton: document.getElementById("confirmWeeklyImportButton"),
 };
 
 function escapeHtml(value) {
@@ -381,7 +388,7 @@ async function readWeeklyMarkdown(config, file) {
   return {file, report: window.MarketWeeklyMarkdown.parse(markdown, file.name.replace(/\.md$/i, ""))};
 }
 
-async function loadCurrentWeeklyReport() {
+async function loadCompletedWeeklyReports() {
   if (!window.MarketWeeklyMarkdown?.parse) throw new Error("周报解析器未加载，请刷新页面后重试。");
   const config = settings();
   const response = await fetch(githubContentUrl(config, WEEKLY_REPORT_DIR), {headers: githubHeaders(config.token)});
@@ -389,26 +396,72 @@ async function loadCurrentWeeklyReport() {
   const files = (await response.json())
     .filter((file) => file.type === "file" && file.name.toLowerCase().endsWith(".md"))
     .sort((a, b) => b.name.localeCompare(a.name));
-  const prefix = mondayFilePrefix();
-  const preferred = files.filter((file) => file.name.startsWith(prefix));
-  const candidates = preferred.length ? preferred : files.slice(0, 12);
-  if (!candidates.length) throw new Error("没有找到可导入的周报。");
-  const reports = await Promise.all(candidates.map((file) => readWeeklyMarkdown(config, file)));
-  const currentMonday = mondayDate();
-  const current = reports
-    .filter(({report}) => report.report_date === currentMonday || (!report.report_date && report.title.startsWith(prefix)))
-    .sort((a, b) => String(b.report.updated_at || b.file.name).localeCompare(String(a.report.updated_at || a.file.name)));
-  const completed = current.find(({report}) => report.status === "completed");
-  if (completed) return completed;
-  if (current.length) throw new Error("本周周报仍是草稿，请先在周报页面点击“完成”。");
-  throw new Error(`没有找到 ${currentMonday} 这一周的周报。`);
+  if (!files.length) throw new Error("没有找到可补导入的周报。");
+  const reports = await Promise.all(files.map((file) => readWeeklyMarkdown(config, file)));
+  const completed = reports
+    .filter(({report}) => report.status === "completed")
+    .sort((a, b) => String(b.report.report_date || b.report.title || b.file.name).localeCompare(String(a.report.report_date || a.report.title || a.file.name)));
+  if (!completed.length) throw new Error("没有找到已完成的周报；草稿不允许补导入。");
+  state.weeklyReports = completed;
+  return completed;
+}
+
+function weeklyImportSearchText(item) {
+  return [item.report.title, item.report.report_date, item.file.name].map((value) => String(value || "").toLowerCase()).join(" ");
+}
+
+function renderWeeklyImportChoices() {
+  const keywords = String(elements.weeklyImportSearch.value || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const visible = state.weeklyReports.filter((item) => keywords.every((keyword) => weeklyImportSearchText(item).includes(keyword)));
+  const previous = elements.weeklyImportReportSelect.value;
+  elements.weeklyImportReportSelect.replaceChildren(...visible.map((item) => {
+    const option = document.createElement("option");
+    option.value = item.file.path;
+    option.textContent = `${item.report.title || item.file.name} · ${item.report.report_date || "周次未标注"}`;
+    return option;
+  }));
+  if (visible.some((item) => item.file.path === previous)) elements.weeklyImportReportSelect.value = previous;
+  else if (visible.length) elements.weeklyImportReportSelect.value = visible[0].file.path;
+  elements.weeklyImportSummary.textContent = visible.length
+    ? `已显示 ${visible.length} / ${state.weeklyReports.length} 份完成稿。`
+    : "没有匹配的已完成周报。";
+  elements.confirmWeeklyImportButton.disabled = !visible.length;
+}
+
+async function openWeeklyImportDialog() {
+  if (!state.snapshot || !state.sha) throw new Error("请先读取 GitHub 主档。");
+  if (!masterReady()) throw new Error("当前不是可编辑的 GitHub 主档。");
+  if (state.dirty) throw new Error("页面存在尚未保存的台账修改。请先保存或读取 / 刷新，再进行补导入。");
+  elements.importProgressButton.disabled = true;
+  elements.importProgressButton.textContent = "正在读取周报...";
+  showResult("正在读取历史已完成周报...", "info");
+  try {
+    await loadCompletedWeeklyReports();
+    elements.weeklyImportSearch.value = "";
+    renderWeeklyImportChoices();
+    elements.weeklyImportDialog.showModal();
+    showResult("请选择需要补导入的已完成周报。", "info");
+  } finally {
+    elements.importProgressButton.textContent = "补导入周报进度";
+    elements.importProgressButton.disabled = !masterReady();
+  }
 }
 
 function ledgerProjectForWeekly(weeklyProject) {
   const projectId = String(weeklyProject.project_id || "").trim();
-  if (projectId) return state.projects.find((project) => field(project, "project_id") === projectId);
+  const idMatch = projectId ? state.projects.find((project) => field(project, "project_id") === projectId) : null;
+  if (idMatch) return idMatch;
   const name = String(weeklyProject.name || "").trim();
   return state.projects.find((project) => field(project, "项目名称") === name);
+}
+
+function weeklyProgressRecordId(reportTitle, projectId, fallbackIndex) {
+  return `weekly-${String(reportTitle || "week").replace(/[^0-9A-Za-z_-]/g, "-")}-${projectId || fallbackIndex}`;
+}
+
+function weeklyProgressDate(report) {
+  const match = String(report.title || "").match(/^(\d{2})(\d{2})(\d{2})_/);
+  return report.report_date || (match ? `20${match[1]}-${match[2]}-${match[3]}` : mondayDate());
 }
 
 function importWeeklyProgress(report, sourceFile) {
@@ -428,11 +481,11 @@ function importWeeklyProgress(report, sourceFile) {
       if (value) project[target] = value;
     });
     project["最近更新时间"] = nowText();
-    const recordId = `weekly-${String(report.title || "week").replace(/[^0-9A-Za-z_-]/g, "-")}-${field(project, "project_id") || index}`;
+    const recordId = weeklyProgressRecordId(report.title, field(project, "project_id"), index);
     const progress = {
       record_id: recordId,
       project_id: field(project, "project_id"),
-      更新日期: report.report_date || mondayDate(),
+      更新日期: weeklyProgressDate(report),
       来源文件: sourceFile,
       当前阶段: weeklyProject.detail_stage || weeklyProject.progress || "",
       更新内容: weeklyProject.current_update || "",
@@ -450,15 +503,16 @@ function importWeeklyProgress(report, sourceFile) {
   return {updated, skipped};
 }
 
-async function handleProgressImport() {
+async function handleProgressImport(selectedWeekly) {
   if (!state.snapshot || !state.sha) throw new Error("请先读取 GitHub 主档。");
   if (!masterReady()) throw new Error("当前不是可编辑的 GitHub 主档。");
   if (state.dirty) throw new Error("页面存在尚未保存的台账修改。请先保存或读取 / 刷新，再进行进度导入。");
   elements.importProgressButton.disabled = true;
-  elements.importProgressButton.textContent = "正在导入...";
-  showResult("正在读取本周完成稿并更新台账...", "info");
+  if (!selectedWeekly?.file || !selectedWeekly?.report) throw new Error("请先选择一份已完成周报。");
+  elements.importProgressButton.textContent = "正在补导入...";
+  showResult(`正在补导入“${selectedWeekly.report.title || selectedWeekly.file.name}”并更新台账...`, "info");
   try {
-    const {file, report} = await loadCurrentWeeklyReport();
+    const {file, report} = selectedWeekly;
     let result = null;
     let saved = false;
     for (let attempt = 0; attempt < 3 && !saved; attempt += 1) {
@@ -466,7 +520,7 @@ async function handleProgressImport() {
       await loadLedgerSnapshot();
       if (!masterReady()) throw new Error("当前不是可编辑的 GitHub 主档。");
       result = importWeeklyProgress(report, file.name);
-      if (!result.updated) throw new Error("本周周报中没有可匹配的已有台账项目，未保存任何修改。");
+      if (!result.updated) throw new Error(`该周报中没有可匹配的已有台账项目。未匹配项目：${result.skipped.join("、") || "未标注"}。未新建项目，也未保存任何修改。`);
       state.dirty = true;
       try {
         await saveLedgerMaster(`chore: import weekly progress from ${file.name}`);
@@ -480,9 +534,9 @@ async function handleProgressImport() {
     elements.summary.textContent = `GitHub 主档 · 更新时间：${state.generatedAt || "未记录"} · 项目：${state.projects.length} · 平台公司：${platformCompanies().length}`;
     elements.weeklyPdfLink.href = `reports.html?title=${encodeURIComponent(report.title)}`;
     const skipped = result.skipped.length ? `；跳过 ${result.skipped.length} 个无法匹配的项目：${result.skipped.join("、")}` : "";
-    showResult(`进度导入完成：已更新 ${result.updated} 个台账项目${skipped}。现在可点击“每周周报 PDF”生成 PDF。`, result.skipped.length ? "warning" : "success");
+    showResult(`周报进度补导入完成：已更新 ${result.updated} 个已有台账项目${skipped}。未匹配项目没有自动新建。`, result.skipped.length ? "warning" : "success");
   } finally {
-    elements.importProgressButton.textContent = "进度导入";
+    elements.importProgressButton.textContent = "补导入周报进度";
     elements.importProgressButton.disabled = !masterReady();
   }
 }
@@ -1163,11 +1217,26 @@ async function handleLoad() {
 }
 
 elements.loadButton.addEventListener("click", handleLoad);
-elements.importProgressButton.addEventListener("click", () => handleProgressImport().catch((error) => {
-  showResult(`进度导入失败：${error.message || error}`, "error");
-  elements.importProgressButton.textContent = "进度导入";
+elements.importProgressButton.addEventListener("click", () => openWeeklyImportDialog().catch((error) => {
+  showResult(`补导入准备失败：${error.message || error}`, "error");
+  elements.importProgressButton.textContent = "补导入周报进度";
   elements.importProgressButton.disabled = !masterReady();
 }));
+elements.weeklyImportSearch.addEventListener("input", renderWeeklyImportChoices);
+elements.weeklyImportForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const selected = state.weeklyReports.find((item) => item.file.path === elements.weeklyImportReportSelect.value);
+  if (!selected) {
+    elements.weeklyImportSummary.textContent = "请选择一份已完成周报。";
+    return;
+  }
+  elements.weeklyImportDialog.close();
+  handleProgressImport(selected).catch((error) => {
+    showResult(`周报进度补导入失败：${error.message || error}`, "error");
+    elements.importProgressButton.textContent = "补导入周报进度";
+    elements.importProgressButton.disabled = !masterReady();
+  });
+});
 elements.saveButton.addEventListener("click", () => saveLedgerMaster().catch((error) => {
   showResult(error.message || String(error), "error");
   elements.saveButton.disabled = !state.dirty;

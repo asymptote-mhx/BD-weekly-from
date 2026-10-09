@@ -386,7 +386,8 @@ async function putWeeklyToGitHub(payload, settings) {
 
 function weeklyLedgerProject(payloadProject, projects) {
   const projectId = String(payloadProject.project_id || "").trim();
-  if (projectId) return projects.find((project) => String(project.project_id || "") === projectId);
+  const idMatch = projectId ? projects.find((project) => String(project.project_id || "") === projectId) : null;
+  if (idMatch) return idMatch;
   const name = String(payloadProject.name || "").trim();
   return projects.find((project) => String(project["项目名称"] || "").trim() === name);
 }

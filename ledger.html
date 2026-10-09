@@ -37,11 +37,11 @@
       </nav>
       <div class="ledger-command-grid">
         <section class="ledger-command-card ledger-sync-card" aria-labelledby="syncActionsTitle">
-          <div><p>MASTER SYNC</p><h2 id="syncActionsTitle">读取与保存</h2><span>一次读取项目台账及平台资源库；修改后统一保存到 GitHub 主档。</span></div>
+          <div><p>MASTER SYNC</p><h2 id="syncActionsTitle">读取与保存</h2><span>一次读取项目台账及平台资源库；周报完成时会自动同步，补导入仅用于自动同步失败后补救。</span></div>
           <div class="ledger-command-actions">
             <button id="loadLedgerButton" type="button">读取 / 刷新</button>
             <button id="saveLedgerButton" type="button" disabled>保存到 GitHub</button>
-            <button id="importWeeklyProgressButton" type="button" disabled>进度导入</button>
+            <button id="importWeeklyProgressButton" type="button" disabled>补导入周报进度</button>
           </div>
         </section>
         <section class="ledger-command-card ledger-create-card" aria-labelledby="createActionsTitle">
@@ -137,11 +137,24 @@
     </form>
   </dialog>
 
+  <dialog id="weeklyImportDialog" class="resource-dialog">
+    <form id="weeklyImportForm" method="dialog">
+      <header><div><p class="eyebrow">RECOVERY IMPORT</p><h2>补导入周报进度</h2></div><button value="cancel" type="button" data-close-dialog>关闭</button></header>
+      <p class="muted">仅在完成周报后自动同步失败时使用。只更新已有项目，无法匹配的项目会列出且不会自动新建。</p>
+      <div class="form-grid">
+        <label class="wide">搜索周报标题或周次<input id="weeklyImportSearch" type="search" placeholder="例如：260928 或 2026-09-28" autocomplete="off"></label>
+        <label class="wide">选择已完成周报<select id="weeklyImportReportSelect" size="8" required></select></label>
+      </div>
+      <div id="weeklyImportSummary" class="panel-summary">打开后将从 GitHub 读取历史完成稿。</div>
+      <footer><span>确认后直接更新 GitHub 台账主档。</span><button id="confirmWeeklyImportButton" value="save" type="submit">确认补导入</button></footer>
+    </form>
+  </dialog>
+
   <script src="weekly_markdown.js?v=20260927-online-to-local-1"></script>
   <script src="partner_core.js?v=20261002-ledger-board-1"></script>
   <script src="partner_api.js?v=20261002-ledger-board-1"></script>
   <script src="partner_board.js?v=20261002-ledger-board-1"></script>
-  <script src="ledger_view.js?v=20261002-ledger-board-1"></script>
+  <script src="ledger_view.js?v=20261009-weekly-recovery-1"></script>
   <script src="partner_ledger_bridge.js?v=20260927-partners-1"></script>
 </body>
 </html>
