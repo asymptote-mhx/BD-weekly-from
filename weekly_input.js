@@ -391,62 +391,73 @@ function weeklyLedgerProject(payloadProject, projects) {
   return projects.find((project) => String(project["项目名称"] || "").trim() === name);
 }
 
-async function updateLedgerFromWeeklyPayload(payload, settings, retry = true) {
-  const response = await fetch(githubContentUrl(settings, LEDGER_SNAPSHOT_PATH), {headers: githubHeaders(settings.token)});
-  if (!response.ok) throw new Error(`台账主档读取失败：${await responseErrorMessage(response)}`);
-  const file = await response.json();
-  const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
-  const projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
-  const progressRecords = Array.isArray(snapshot.progress_records) ? snapshot.progress_records : [];
-  let updated = 0;
-  (payload.projects || []).forEach((weeklyProject, index) => {
-    const project = weeklyLedgerProject(weeklyProject, projects);
-    if (!project) return;
-    const mappings = [
-      ["业主单位", "owner_org"], ["当前进度", "progress"], ["当前细分阶段", "detail_stage"],
-      ["下一节点时间", "next_node_time"], ["状态备注", "current_update"],
-    ];
-    mappings.forEach(([target, source]) => {
-      const value = String(weeklyProject[source] || "").trim();
-      if (value) project[target] = value;
-    });
-    project["最近更新时间"] = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-    const recordId = `weekly-${String(payload.title || "week").replace(/[^0-9A-Za-z_-]/g, "-")}-${project.project_id || index}`;
-    const progress = {
-      record_id: recordId,
-      project_id: project.project_id,
-      更新日期: weekMondayFromTitle(payload.title),
-      来源文件: `${payload.title}.md`,
-      当前阶段: weeklyProject.detail_stage || weeklyProject.progress || "",
-      更新内容: weeklyProject.current_update || "",
-      下一步工作: weeklyProject.next_work || "",
-      下一节点时间: weeklyProject.next_node_time || "",
-      是否已确认: "是",
-    };
-    const recordIndex = progressRecords.findIndex((row) => String(row.record_id || "") === recordId);
-    if (progress.current_update || progress["更新内容"] || progress["下一步工作"] || progress["下一节点时间"]) {
-      if (recordIndex === -1) progressRecords.push(progress); else progressRecords[recordIndex] = {...progressRecords[recordIndex], ...progress};
+async function updateLedgerFromWeeklyPayload(payload, settings) {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (attempt > 1) {
+      showWeeklyResult(`台账主档在同步期间发生更新，正在读取最新版并自动重试（${attempt - 1}/${maxAttempts - 1}）...`, "info");
+      await new Promise((resolve) => setTimeout(resolve, (attempt - 1) * 250));
     }
-    updated += 1;
-  });
-  snapshot.projects = projects;
-  snapshot.progress_records = progressRecords;
-  snapshot.generated_at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-  if (snapshot.platform_resources) {
-    snapshot.platform_resources.projects = structuredClone(projects);
-    const linkedIds = new Set((snapshot.platform_resources.project_platform_links || []).map((row) => String(row.project_id || "")));
-    snapshot.platform_resources.unassigned_projects = projects.filter((project) => isActiveLedgerProject(project) && !linkedIds.has(String(project.project_id || "")));
-  }
-  const saveResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${LEDGER_SNAPSHOT_PATH}`, {
-    method: "PUT",
-    headers: githubHeaders(settings.token),
-    body: JSON.stringify({message: `Update ledger from ${payload.title}`, content: utf8ToBase64(JSON.stringify(snapshot, null, 2)), branch: settings.branch, sha: file.sha}),
-  });
-  if (!saveResponse.ok) {
-    if (retry && (saveResponse.status === 409 || saveResponse.status === 422)) return updateLedgerFromWeeklyPayload(payload, settings, false);
+    const response = await fetch(githubContentUrl(settings, LEDGER_SNAPSHOT_PATH), {headers: githubHeaders(settings.token), cache: "no-store"});
+    if (!response.ok) throw new Error(`台账主档读取失败：${await responseErrorMessage(response)}`);
+    const file = await response.json();
+    const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
+    const projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
+    const progressRecords = Array.isArray(snapshot.progress_records) ? snapshot.progress_records : [];
+    let updated = 0;
+    const skipped = [];
+    (payload.projects || []).forEach((weeklyProject, index) => {
+      const project = weeklyLedgerProject(weeklyProject, projects);
+      if (!project) {
+        skipped.push(String(weeklyProject.name || weeklyProject.project_id || `第 ${index + 1} 个项目`));
+        return;
+      }
+      const mappings = [
+        ["业主单位", "owner_org"], ["当前进度", "progress"], ["当前细分阶段", "detail_stage"],
+        ["下一节点时间", "next_node_time"], ["状态备注", "current_update"], ["下一步工作", "next_work"],
+      ];
+      mappings.forEach(([target, source]) => {
+        const value = String(weeklyProject[source] || "").trim();
+        if (value) project[target] = value;
+      });
+      project["最近更新时间"] = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      const recordId = `weekly-${String(payload.title || "week").replace(/[^0-9A-Za-z_-]/g, "-")}-${project.project_id || index}`;
+      const progress = {
+        record_id: recordId,
+        project_id: project.project_id,
+        更新日期: weekMondayFromTitle(payload.title),
+        来源文件: `${payload.title}.md`,
+        当前阶段: weeklyProject.detail_stage || weeklyProject.progress || "",
+        更新内容: weeklyProject.current_update || "",
+        下一步工作: weeklyProject.next_work || "",
+        下一节点时间: weeklyProject.next_node_time || "",
+        是否已确认: "是",
+      };
+      const recordIndex = progressRecords.findIndex((row) => String(row.record_id || "") === recordId);
+      if (progress["更新内容"] || progress["下一步工作"] || progress["下一节点时间"]) {
+        if (recordIndex === -1) progressRecords.push(progress); else progressRecords[recordIndex] = {...progressRecords[recordIndex], ...progress};
+      }
+      updated += 1;
+    });
+    if (!updated) return {updated, skipped};
+    snapshot.projects = projects;
+    snapshot.progress_records = progressRecords;
+    snapshot.generated_at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    if (snapshot.platform_resources) {
+      snapshot.platform_resources.projects = structuredClone(projects);
+      const linkedIds = new Set((snapshot.platform_resources.project_platform_links || []).map((row) => String(row.project_id || "")));
+      snapshot.platform_resources.unassigned_projects = projects.filter((project) => isActiveLedgerProject(project) && !linkedIds.has(String(project.project_id || "")));
+    }
+    const saveResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${LEDGER_SNAPSHOT_PATH}`, {
+      method: "PUT",
+      headers: githubHeaders(settings.token),
+      body: JSON.stringify({message: `Update ledger from ${payload.title}`, content: utf8ToBase64(JSON.stringify(snapshot, null, 2)), branch: settings.branch, sha: file.sha}),
+    });
+    if (saveResponse.ok) return {updated, skipped};
+    if ((saveResponse.status === 409 || saveResponse.status === 422) && attempt < maxAttempts) continue;
     throw new Error(`台账主档更新失败：${await responseErrorMessage(saveResponse)}`);
   }
-  return updated;
+  throw new Error("台账主档在同步期间被连续更新，自动重试仍未成功。");
 }
 
 async function loadWeeklyFromGitHub() {
@@ -1103,8 +1114,17 @@ async function saveWeeklyForm(status = "draft") {
     if (isGitHubSaveMode()) {
       const data = await saveWeeklyToGitHub(payload);
       if (status === "completed") {
-        const updated = await updateLedgerFromWeeklyPayload(payload, collectGitHubSettings());
-        showWeeklyResult(`已完成并保存到 GitHub：${data.file}；同时更新 ${updated} 个台账项目。`, "success");
+        try {
+          const result = await updateLedgerFromWeeklyPayload(payload, collectGitHubSettings());
+          const skipped = result.skipped.length ? `；跳过 ${result.skipped.length} 个无法匹配的项目：${result.skipped.join("、")}` : "";
+          if (result.updated) {
+            showWeeklyResult(`已完成并保存到 GitHub：${data.file}；同时自动导入进度到 ${result.updated} 个台账项目${skipped}。`, result.skipped.length ? "warning" : "success");
+          } else {
+            showWeeklyResult(`周报已完成并保存到 GitHub：${data.file}；但没有匹配到已有台账项目，未导入进度${skipped}。`, "warning");
+          }
+        } catch (error) {
+          showWeeklyResult(`周报已完成并保存到 GitHub：${data.file}；但台账自动同步失败：${error.message || error}。可到项目台账点击“进度导入”补同步。`, "warning");
+        }
       } else {
         showWeeklyResult(`已暂存到 GitHub：${data.file}。`, "success");
       }
