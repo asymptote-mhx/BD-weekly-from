@@ -88,6 +88,8 @@ const state = {
   selectedProjectId: "",
   generatedAt: "",
   dirty: false,
+  projectBoards: {},
+  projectBoardLoadError: "",
 };
 
 const elements = {
@@ -254,6 +256,39 @@ async function loadLedgerSnapshot() {
   const requestedProjectId = new URLSearchParams(location.search).get("project") || "";
   state.selectedProjectId = state.projects.some((row) => String(row?.project_id || "") === requestedProjectId)
     ? requestedProjectId : (state.projects[0]?.project_id || "");
+}
+
+async function loadProjectDecisionBoards() {
+  state.projectBoards = {};
+  state.projectBoardLoadError = "";
+  if (!globalThis.PartnerAPI) throw new Error("白板读取组件未加载。请刷新页面后重试。");
+  const ledgerConfig = settings();
+  const partnerConfig = {...PartnerAPI.settings(), token: ledgerConfig.token};
+  try {
+    const result = await PartnerAPI.readIndex(partnerConfig);
+    const boards = result.data?.project_boards;
+    state.projectBoards = boards && typeof boards === "object" ? structuredClone(boards) : {};
+  } catch (error) {
+    state.projectBoardLoadError = error.message || String(error);
+  }
+}
+
+function projectDecisionBoard(projectId) {
+  const board = state.projectBoards?.[projectId];
+  return board && Array.isArray(board.nodes) && board.nodes.length ? board : null;
+}
+
+function renderProjectDecisionBoard(project) {
+  const projectId = field(project, "project_id");
+  const board = projectDecisionBoard(projectId);
+  if (!board || !globalThis.PartnerBoard?.renderPreview) return;
+  const host = document.getElementById("projectDecisionBoard");
+  if (!host) return;
+  PartnerBoard.renderPreview(host, {
+    projectId,
+    title: field(project, "项目名称") || "未命名项目",
+    stored: board,
+  });
 }
 
 function validateBrowserMaster() {
@@ -1079,8 +1114,10 @@ function renderProjectDetail() {
     ${renderKeyGrid(project)}
     ${renderPlatformSection(project)}
     <section class="work-item">${escapeHtml(field(project, "下一步工作") || "暂无下一步工作。")}</section>
+    ${projectDecisionBoard(id) ? '<div id="projectDecisionBoard"></div>' : ""}
     ${renderProgressSection(id)}
   `;
+  renderProjectDecisionBoard(project);
 }
 
 function renderAll() {
@@ -1102,6 +1139,7 @@ async function handleLoad() {
   showResult("正在读取 GitHub 台账快照...", "info");
   try {
     await loadLedgerSnapshot();
+    await loadProjectDecisionBoards();
     refreshFilters();
     renderAll();
     elements.newProjectButton.disabled = !masterReady();
@@ -1109,9 +1147,14 @@ async function handleLoad() {
     elements.saveButton.disabled = true;
     const masterLabel = masterReady() ? "GitHub 主档" : "旧版只读快照";
     elements.summary.textContent = `${masterLabel} · 更新时间：${state.generatedAt || "未记录"} · 项目：${state.projects.length} · 平台公司：${platformCompanies().length}`;
+    const boardCount = Object.values(state.projectBoards).filter((board) => Array.isArray(board?.nodes) && board.nodes.length).length;
+    const boardStatus = state.projectBoardLoadError
+      ? `；决策链白板未读取：${state.projectBoardLoadError}`
+      : `；已关联 ${boardCount} 个项目决策链白板`;
     showResult(masterReady()
-      ? `已读取 ${state.projects.length} 个台账项目，可在线维护。`
-      : "已读取旧版快照。为防止结束项目数据丢失，编辑功能已锁定，请先执行主档迁移。", masterReady() ? "success" : "warning");
+      ? `已读取 ${state.projects.length} 个台账项目，可在线维护${boardStatus}。`
+      : "已读取旧版快照。为防止结束项目数据丢失，编辑功能已锁定，请先执行主档迁移。",
+    masterReady() && !state.projectBoardLoadError ? "success" : "warning");
   } catch (error) {
     showResult(`读取失败：${error.message || error}`, "error");
   } finally {
