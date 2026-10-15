@@ -13,35 +13,30 @@ const CARD_CLASS = {
   招标流程: "stage-bid-card",
   维护服务: "stage-service-card",
 };
-const STAGE_ORDER = [
-  "线索获取",
-  "关键人接触",
-  "需求确认",
-  "资料收集",
-  "初步方案",
-  "标前准备",
-  "投标中",
-  "定标阶段",
-  "合同签署",
-  "建设期",
-  "建成",
-  "衔接下阶段招标",
-];
+const STAGES_BY_PROGRESS = {
+  项目接触: ["需求获取", "关键人接触", "项目确认"],
+  前期方案: ["资料收集", "初步方案", "方案确认"],
+  招标流程: ["标前准备", "投标中", "定标阶段"],
+  维护服务: ["建设期", "建成", "衔接下阶段招标"],
+};
+const DETAIL_STAGE_ALIASES = {线索获取: "需求获取", 需求确认: "项目确认", 合同签署: "定标阶段"};
+const STAGE_ORDER = Object.values(STAGES_BY_PROGRESS).flat();
 const PROGRESS_ORDER = ["维护服务", "招标流程", "前期方案", "项目接触"];
 const PROGRESS_BY_STAGE = {
-  线索获取: "项目接触",
+  需求获取: "项目接触",
   关键人接触: "项目接触",
-  需求确认: "项目接触",
+  项目确认: "项目接触",
   资料收集: "前期方案",
   初步方案: "前期方案",
+  方案确认: "前期方案",
   标前准备: "招标流程",
   投标中: "招标流程",
   定标阶段: "招标流程",
-  合同签署: "招标流程",
   建设期: "维护服务",
   建成: "维护服务",
   衔接下阶段招标: "维护服务",
 };
+Object.entries(DETAIL_STAGE_ALIASES).forEach(([legacy, current]) => { PROGRESS_BY_STAGE[legacy] = PROGRESS_BY_STAGE[current]; });
 const PRIORITY_ORDER = ["S", "A", "B", "C"];
 const TECHNICAL_GROUP_PRESETS = ["一组", "二组", "丁德强团队", "王启宇团队"];
 const TECHNICAL_GROUP_OPTIONS = [...TECHNICAL_GROUP_PRESETS, "外部团队"];
@@ -52,7 +47,7 @@ const PROJECT_FIELD_GROUPS = [
     ["结束原因", "结束原因", "select", false, ["未中标", "商务评价放弃"]],
     ["项目优先级", "项目优先级", "select", false, ["S", "A", "B", "C"]], ["数据确认状态", "数据确认状态"],
     ["当前进度", "当前进度", "select", false, Object.keys(STAGE_CLASS)], ["当前细分阶段", "当前细分阶段", "select", false, STAGE_ORDER],
-    ["下一节点时间", "下一节点时间", "date"], ["内部负责人", "内部负责人"], ["状态备注", "状态备注", "textarea", true],
+    ["下一节点时间", "下一节点时间", "date"], ["内部负责人", "技术负责人"], ["状态备注", "状态备注", "textarea", true],
     ["下一步工作", "下一步工作", "textarea", true],
   ]],
   ["基础信息", [
@@ -668,12 +663,12 @@ function priorityIndex(project) {
 }
 
 function stageIndex(project) {
-  const index = STAGE_ORDER.indexOf(field(project, "当前细分阶段"));
+  const index = STAGE_ORDER.indexOf(normalizeDetailStage(field(project, "当前细分阶段")));
   return index === -1 ? STAGE_ORDER.length : STAGE_ORDER.length - 1 - index;
 }
 
 function progressIndex(project) {
-  const progress = field(project, "当前进度") || PROGRESS_BY_STAGE[field(project, "当前细分阶段")] || "";
+  const progress = field(project, "当前进度") || PROGRESS_BY_STAGE[normalizeDetailStage(field(project, "当前细分阶段"))] || "";
   const index = PROGRESS_ORDER.indexOf(progress);
   return index === -1 ? PROGRESS_ORDER.length : index;
 }
@@ -750,7 +745,7 @@ function renderProjectList() {
             <span>地区：${escapeHtml(field(project, "地区") || "未填")}</span>
             <span>业主：${escapeHtml(field(project, "业主单位") || "未填")}</span>
             <span>平台：${escapeHtml(platformNames(project) || "未关联")}</span>
-            <span>阶段：${escapeHtml(field(project, "当前细分阶段") || "未填")}</span>
+            <span>阶段：${escapeHtml(normalizeDetailStage(field(project, "当前细分阶段")) || "未填")}</span>
             <span>技术：${escapeHtml(field(project, "技术配合类型") || "未填")}</span>
           </span>
           <span class="project-next">${escapeHtml(field(project, "下一步工作") || "")}</span>
@@ -772,13 +767,13 @@ function renderKeyGrid(project) {
     ["合作单位", field(project, "合作单位")],
     ["业主类型", field(project, "业主类型")],
     ["当前进度", field(project, "当前进度")],
-    ["当前细分阶段", field(project, "当前细分阶段")],
+    ["当前细分阶段", normalizeDetailStage(field(project, "当前细分阶段"))],
     ["下一节点时间", field(project, "下一节点时间")],
     ["项目优先级", field(project, "项目优先级")],
     ["预估合同额", field(project, "预估合同额")],
     ["是否需要技术介入", field(project, "是否需要技术介入")],
     ["技术配合组", field(project, "技术配合类型")],
-    ["负责人", field(project, "内部负责人")],
+    ["技术负责人", field(project, "内部负责人")],
     ...(recordStatus(project) === "已结束" ? [["结束原因", field(project, "结束原因")]] : []),
   ];
   return `<div class="detail-grid">${items.map(([label, value]) => metric(label, value)).join("")}</div>`;
@@ -933,7 +928,7 @@ function exportWeeklyReportMarkdown() {
       `- 地区：${field(project, "地区")}`,
       `- 技术配合组：${field(project, "技术配合类型")}`,
       `- 当前进度：${field(project, "当前进度")}`,
-      `- 当前细分阶段：${field(project, "当前细分阶段")}`,
+      `- 当前细分阶段：${normalizeDetailStage(field(project, "当前细分阶段"))}`,
       `- 本周进展：${field(project, "状态备注")}`,
       `- 下一步工作：${field(project, "下一步工作")}`,
       `- 下一节点时间：${field(project, "下一节点时间")}`,
@@ -1039,6 +1034,26 @@ function editorControl(spec, value, source = "project") {
   return `<label class="${wide ? "wide" : ""}">${escapeHtml(label)}${control}</label>`;
 }
 
+function normalizeDetailStage(detailStage) {
+  const normalized = String(detailStage || "").trim();
+  return DETAIL_STAGE_ALIASES[normalized] || normalized;
+}
+
+function updateProjectEditorDetailStages(preferredStage = "") {
+  const progressSelect = elements.projectEditorFields.querySelector('[data-editor-key="当前进度"]');
+  const detailSelect = elements.projectEditorFields.querySelector('[data-editor-key="当前细分阶段"]');
+  if (!progressSelect || !detailSelect) return;
+  const stages = STAGES_BY_PROGRESS[progressSelect.value] || [];
+  const normalizedPreferred = normalizeDetailStage(preferredStage || detailSelect.value);
+  detailSelect.replaceChildren(...stages.map((stage) => {
+    const option = document.createElement("option");
+    option.value = stage;
+    option.textContent = stage;
+    return option;
+  }));
+  detailSelect.value = stages.includes(normalizedPreferred) ? normalizedPreferred : (stages[0] || "");
+}
+
 function delimitedLines(rows, fields) {
   return (Array.isArray(rows) ? rows : []).map((row) => fields.map((key) => field(row, key)).join("｜")).join("\n");
 }
@@ -1056,13 +1071,15 @@ function openProjectEditor(project = null) {
     showResult("当前还是旧快照，请先完成 GitHub 主档迁移。", "error");
     return;
   }
-  const current = project ? {...project, "记录状态": recordStatus(project)} : {"记录状态": "正常", "当前进度": "项目接触", "当前细分阶段": "线索获取"};
+  const current = project ? {...project, "记录状态": recordStatus(project)} : {"记录状态": "正常", "当前进度": "项目接触", "当前细分阶段": "需求获取"};
+  current["当前细分阶段"] = normalizeDetailStage(current["当前细分阶段"]);
   const projectId = field(current, "project_id");
   elements.projectEditorTitle.textContent = projectId ? `编辑：${field(current, "项目名称") || projectId}` : "新建项目";
   elements.projectEditorDialog.dataset.projectId = projectId;
   const groups = PROJECT_FIELD_GROUPS.map(([title, specs]) => `<section class="ledger-editor-group"><h3>${escapeHtml(title)}</h3><div class="ledger-editor-grid">${specs.map((spec) => editorControl(spec, current[spec[0]] || "")).join("")}</div></section>`);
   groups.push(renderPlatformEditor(current));
   elements.projectEditorFields.innerHTML = groups.join("");
+  updateProjectEditorDetailStages(current["当前细分阶段"]);
   elements.projectEditorDialog.showModal();
 }
 
@@ -1123,10 +1140,14 @@ function renderProgressSection(projectId) {
 
 function openProgressEditor(record = null) {
   const current = record || {};
+  const project = state.projects.find((row) => field(row, "project_id") === state.selectedProjectId) || {};
+  const progress = field(project, "当前进度") || PROGRESS_BY_STAGE[normalizeDetailStage(field(current, "当前阶段"))] || "项目接触";
+  const stages = STAGES_BY_PROGRESS[progress] || STAGE_ORDER;
+  const currentStage = normalizeDetailStage(field(current, "当前阶段"));
   document.getElementById("progressEditorTitle").textContent = record ? "编辑推进记录" : "新增推进记录";
   document.getElementById("progressRecordId").value = field(current, "record_id");
   document.getElementById("progressDate").value = field(current, "更新日期") || new Date().toISOString().slice(0, 10);
-  document.getElementById("progressStage").innerHTML = STAGE_ORDER.map((stage) => `<option${field(current, "当前阶段") === stage ? " selected" : ""}>${escapeHtml(stage)}</option>`).join("");
+  document.getElementById("progressStage").innerHTML = stages.map((stage) => `<option${currentStage === stage ? " selected" : ""}>${escapeHtml(stage)}</option>`).join("");
   document.getElementById("progressText").value = field(current, "更新内容");
   document.getElementById("progressNextWork").value = field(current, "下一步工作");
   document.getElementById("progressNextDate").value = field(current, "下一节点时间");
@@ -1163,7 +1184,7 @@ function renderProjectDetail() {
   }
   const id = field(project, "project_id");
   elements.detailTitle.textContent = field(project, "项目名称") || "未命名项目";
-  elements.detailSubtitle.textContent = `${field(project, "地区") || "未填地区"} · ${field(project, "当前进度") || "未填进度"} · ${field(project, "当前细分阶段") || "未填阶段"}`;
+  elements.detailSubtitle.textContent = `${field(project, "地区") || "未填地区"} · ${field(project, "当前进度") || "未填进度"} · ${normalizeDetailStage(field(project, "当前细分阶段")) || "未填阶段"}`;
   elements.detailBody.innerHTML = `
     ${renderKeyGrid(project)}
     ${renderPlatformSection(project)}
@@ -1279,6 +1300,9 @@ elements.deleteProjectButton.addEventListener("click", () => {
   refreshFilters(); renderAll();
 });
 elements.projectEditorForm.addEventListener("submit", submitProjectEditor);
+elements.projectEditorFields.addEventListener("change", (event) => {
+  if (event.target.matches('[data-editor-key="当前进度"]')) updateProjectEditorDetailStages();
+});
 elements.projectEditorFields.addEventListener("change", (event) => {
   if (event.target.dataset.editorKey !== "技术配合类型") return;
   const externalLabel = document.getElementById("externalTechnicalGroupLabel");
