@@ -1,6 +1,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PartnerCore=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
   const STAGES=['合作意向','合作中','合作成功','合作失败'];
+  const PLATFORM_PARTNER_TYPES=['设计院','施工单位'];
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function validate(data){
     if(data?.schema_version!==1||!Array.isArray(data.partners))throw Error('伙伴数据格式不受支持');
@@ -21,6 +22,31 @@
     if(i<0)partner.project_links.push(link);else partner.project_links[i]={...partner.project_links[i],...link};
     copy.updated_at=new Date().toISOString();return validate(copy);
   }
+  const normalizedName=value=>String(value||'').trim().toLowerCase().replace(/[\s·•・，,()（）]/g,'');
+  function emptyDimensions(){return ['关系能力','履约能力','组织推进能力','信息质量','合作协同','商务匹配'].map(label=>({label,text:'待评估'}));}
+  function platformCandidate(row){
+    const id=row.platform_company_id,name=row['平台公司名称']||id,type=row['资源分类'];
+    return {id,name,platform_company_id:id,organization_name:name,organization_type:type,assessment_status:'待评估',city:row['地区']||'待确认',role:type,summary:'来自平台资源库，尚未建立正式合作伙伴评估。',dimensions:emptyDimensions(),coverage:[],relations:[],commitments:[],project_links:[],role_platform:{type:'背靠平台',name},fulfilled_projects:[],information_records:[],capability_relations:[],cooperation_history:{success:'待确认',success_note:'',long_term:'待确认',long_term_note:''},_platform_candidate:true};
+  }
+  function mergePlatformPartners(index,companies){
+    const copy=JSON.parse(JSON.stringify(index)),eligible=(companies||[]).filter(row=>PLATFORM_PARTNER_TYPES.includes(row['资源分类'])&&row.platform_company_id);
+    const claimed=new Set();
+    for(const partner of copy.partners){
+      let row=eligible.find(x=>x.platform_company_id===partner.platform_company_id);
+      if(!row){const names=[partner.organization_name,partner.role_platform?.name,partner.name].map(normalizedName).filter(Boolean);row=eligible.find(x=>[x['平台公司名称'],x['别名']].map(normalizedName).filter(Boolean).some(n=>names.includes(n)));}
+      if(row){partner.platform_company_id=row.platform_company_id;partner.organization_name=row['平台公司名称'];partner.organization_type=row['资源分类'];claimed.add(row.platform_company_id);}
+      partner.assessment_status=partner.assessment_status||'已建档';
+    }
+    for(const row of eligible)if(!claimed.has(row.platform_company_id))copy.partners.push(platformCandidate(row));
+    return copy;
+  }
+  function materializePartner(data,partnerId){
+    const copy=JSON.parse(JSON.stringify(data)),partner=copy.partners.find(p=>p.id===partnerId);
+    if(!partner)throw Error('伙伴不存在');
+    delete partner._platform_candidate;partner.assessment_status=partner.assessment_status||'待评估';
+    copy.partners=copy.partners.filter(p=>!p._platform_candidate);copy.updated_at=new Date().toISOString();return validate(copy);
+  }
+  function withoutPlatformCandidates(data){const copy=JSON.parse(JSON.stringify(data));copy.partners=copy.partners.filter(p=>!p._platform_candidate);return validate(copy);}
   function href(page,params){const q=new URLSearchParams(params);return page+'?'+q.toString();}
   function informationStats(records){
     const facts=records.filter(r=>r.kind==='事实'&&r.verification_status==='已验证');
@@ -42,5 +68,6 @@
       const previous=results.get(other);if(!previous||record.distance==='直接'&&previous.distance!=='直接')results.set(other,record);
     }}return [...results.values()];
   }
-  return {boardRelations,STAGES,stageFor,projectCount,informationStats,esc,validate,counts,forProject,upsertLink,href};
+  return {boardRelations,STAGES,PLATFORM_PARTNER_TYPES,stageFor,projectCount,informationStats,esc,validate,counts,forProject,upsertLink,mergePlatformPartners,materializePartner,withoutPlatformCandidates,href};
 });
+
