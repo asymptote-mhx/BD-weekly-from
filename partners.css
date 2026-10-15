@@ -15,3 +15,11 @@
 .board-scroll [data-control]{cursor:move;touch-action:none}
 .board-preview{margin:28px 0}.board-preview-header{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:12px}.board-preview-header h4{margin:0 0 4px;font-size:18px}.board-preview-header p{margin:0;color:#607282}.board-preview-link{white-space:nowrap;text-decoration:none;color:#245f87;font-weight:700}.board-preview-layout{display:block}.board-preview .board-scroll{height:420px;overflow:hidden}.board-preview .board-scroll svg{width:100%;height:100%}.board-preview [data-node],.board-preview [data-edge]{cursor:default}
 .project-information{margin:32px 0}.project-information h2{display:flex;gap:16px;align-items:center;justify-content:space-between}.project-information h2 button{font-size:14px}.information-content{white-space:pre-wrap;min-width:260px}.project-information th:first-child{width:180px}.project-information th:last-child{width:160px}
+
+/* Keep editing controls outside the canvas on desktop and tablets. */
+.board-layout.board-direct{display:grid;grid-template-columns:minmax(0,1fr) 288px;align-items:start}
+.board-direct .board-scroll{min-width:0;height:660px}
+.board-floating-editor{position:static;width:100%;max-height:660px;border:0;border-left:1px solid #ccd8df;border-radius:0;box-shadow:none;overscroll-behavior:contain}
+.board-toolbar button,.board-floating-editor button{min-height:44px}
+@media(pointer:coarse){.board-scroll [data-port]{r:13px}.board-scroll [data-control]{r:14px}.board-floating-editor input,.board-floating-editor select,.board-floating-editor textarea{font-size:16px;min-height:44px}}
+@media(max-width:700px){.board-layout.board-direct{grid-template-columns:minmax(0,1fr)}.board-direct .board-scroll{height:480px}.board-floating-editor{max-height:420px;border-left:0;border-top:1px solid #ccd8df}.board-toolbar{gap:6px}.board-toolbar button{padding:10px}}
