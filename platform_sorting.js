@@ -17,7 +17,7 @@
     ["SH", "上海", "上海"], ["SX", "山西", "山西 太原 大同 阳泉 长治 晋城 朔州 晋中 运城 忻州 临汾 吕梁"], ["SN", "陕西", "陕西 西安 铜川 宝鸡 咸阳 渭南 延安 汉中 榆林 安康 商洛"],
     ["SC", "四川", "四川 成都 自贡 攀枝花 泸州 德阳 绵阳 广元 遂宁 内江 乐山 南充 眉山 宜宾 广安 达州 雅安 巴中 资阳 阿坝 甘孜 凉山"], ["TJ", "天津", "天津"], ["XZ", "西藏", "西藏 拉萨 日喀则 昌都 林芝 山南 那曲 阿里"],
     ["XJ", "新疆", "新疆 乌鲁木齐 克拉玛依 吐鲁番 哈密 昌吉 博尔塔拉 巴音郭楞 阿克苏 克孜勒苏 喀什 和田 伊犁 塔城 阿勒泰"], ["YN", "云南", "云南 昆明 曲靖 玉溪 保山 昭通 丽江 普洱 临沧 楚雄 红河 文山 西双版纳 大理 德宏 怒江 迪庆"],
-    ["ZJ", "浙江", "浙江 杭州 宁波 温州 嘉兴 湖州 绍兴 金华 衢州 舟山 台州 丽水"],
+    ["ZJ", "浙江", "浙江 杭州 宁波 温州 嘉兴 湖州 绍兴 金华 义乌 衢州 舟山 台州 丽水"],
   ].map(([code, name, aliases]) => ({ code, name, aliases: aliases.split(" ") }));
   const clean = (value) => String(value ?? "").trim();
   const field = (row, key) => clean(row?.[key]);
@@ -32,3 +32,4 @@
   function flatCompanies(companies) { return groupCompanies(companies).flatMap((province) => province.categories.flatMap((category) => category.rows.map((row) => ({ ...row, province, category: category.category })))); }
   return { CATEGORY_ORDER, PROVINCES, provinceOf, categoryOf, groupCompanies, flatCompanies };
 });
+
