@@ -16,6 +16,7 @@ const DETAIL_STAGES = [
 const TECHNICAL_GROUP_OPTIONS = ["", "一组", "二组", "丁德强团队", "王启宇团队", "自行填写"];
 const WEEKLY_PROGRESS_OPTIONS = ["项目接触", "前期方案", "招标流程", "维护服务"];
 const UAD_VISIT_PARTICIPANTS = ["毛瀚轩", "杨鹏", "胡彦之", "楚冉"];
+const CONTACT_METHOD_OPTIONS = ["线上交流", "当面拜访", "正式汇报", "商务接待", "陪同考察"];
 const PLATFORM_SORT = window.MarketPlatformSort;
 const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-plan-project";
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
@@ -86,6 +87,12 @@ function mondayReportTitle(date = new Date()) {
 
 function optionHtml(options, selected = "") {
   return options.map((option) => `<option value="${escapeHtml(option)}"${option === selected ? " selected" : ""}>${escapeHtml(option || "暂未指定")}</option>`).join("");
+}
+
+function contactMethodOptions(selected = "") {
+  const historical = selected && !CONTACT_METHOD_OPTIONS.includes(selected);
+  const options = historical ? [...CONTACT_METHOD_OPTIONS, selected] : CONTACT_METHOD_OPTIONS;
+  return `<option value="">请选择</option>${options.map((value) => `<option value="${escapeHtml(value)}"${selected === value ? " selected" : ""}>${escapeHtml(value)}${historical && selected === value ? "（历史选项）" : ""}</option>`).join("")}`;
 }
 
 function showWeeklyResult(message, type = "info") {
@@ -731,7 +738,7 @@ function addWeeklyVisitRow(row = {}, options = {}) {
     <label>接触日期<input data-weekly-field="contact_date" type="date" value="${escapeHtml(row.contact_date || todayText())}"></label>
     <label>平台公司（资源库，可选）<select data-weekly-field="platform_company_id">${companyOptions(companyId)}</select></label>
     <label>其他单位（可手填）<input data-visit-custom-unit placeholder="资源库没有时直接填写单位" value="${escapeHtml(customUnit)}"></label>
-    <label>接触方式<select data-weekly-field="contact_method"><option value="">请选择</option>${["简单拜访","项目汇报","商务宴请","线上交流","陪同考察"].map((value) => `<option${row.contact_method === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
+    <label>接触方式<select data-weekly-field="contact_method">${contactMethodOptions(row.contact_method || "")}</select></label>
     <div class="visit-multi visit-participants"><span class="visit-multi-title">参与拜访人员（可多选）</span><div class="participant-choice-list" data-visit-participants role="group" aria-label="参与拜访人员">${participantChoices}</div><input data-visit-custom-participants placeholder="其他参与人员，可自行补充" value="${escapeHtml(customParticipants)}"><small>常用人员可直接勾选，其他人员在下方补充</small></div>
     <div class="visit-multi"><span class="visit-multi-title">接触对象（可多选）</span><div class="visit-choice-list" data-visit-people role="group" aria-label="接触对象"></div><input data-visit-custom-people placeholder="资源库没有该人员时直接填写，支持多人" value="${escapeHtml(customPeople)}"><small>可勾选决策链人员，也可直接手填</small></div>
     <div class="visit-multi"><span class="visit-multi-title">讨论项目（可独立多选）</span><div class="visit-choice-list" data-visit-projects role="group" aria-label="讨论项目"></div><input data-visit-custom-projects placeholder="没有对应项目时可留空；未登记项目可手填" value="${escapeHtml(customProjects)}"><small>无需先选平台；选择平台后，关联项目会优先排列</small></div>
