@@ -399,6 +399,136 @@ function weeklyLedgerProject(payloadProject, projects) {
   return projects.find((project) => String(project["项目名称"] || "").trim() === name);
 }
 
+function normalizePlatformName(value) {
+  return String(value || "").replace(/[^0-9A-Za-z\u4e00-\u9fff]/g, "").toLowerCase();
+}
+
+function platformCompanyIndex(companies) {
+  const byId = new Map();
+  const names = [];
+  (companies || []).forEach((company) => {
+    const platformId = String(company.platform_company_id || "").trim();
+    if (!platformId) return;
+    byId.set(platformId, company);
+    const aliases = [company["平台公司名称"], ...String(company["别名"] || "").split(/[、,，;；|]/)];
+    aliases.forEach((alias) => {
+      const normalized = normalizePlatformName(alias);
+      if (!normalized) return;
+      names.push({normalized, platformId});
+      const shortened = normalized.replace(/(?:股份)?有限公司$|有限责任公司$/, "");
+      if (shortened.length >= 4 && shortened !== normalized) names.push({normalized: shortened, platformId});
+    });
+  });
+  names.sort((left, right) => right.normalized.length - left.normalized.length);
+  return {byId, names};
+}
+
+function matchVisitPlatform(visit, index) {
+  const requestedId = String(visit?.platform_company_id || "").trim();
+  if (requestedId && index.byId.has(requestedId)) return requestedId;
+  const normalized = normalizePlatformName(visit?.unit);
+  if (!normalized || normalized === "/") return "";
+  const match = index.names.find((candidate) => candidate.normalized.length >= 2 && (
+    candidate.normalized === normalized
+    || candidate.normalized.includes(normalized) && normalized.length >= 4
+    || normalized.includes(candidate.normalized)
+  ));
+  return match?.platformId || "";
+}
+
+async function weeklyContactId(parts) {
+  const bytes = new TextEncoder().encode(parts.join("|"));
+  const digest = await crypto.subtle.digest("SHA-1", bytes);
+  const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `weekly-${hex.slice(0, 16)}`;
+}
+
+function meaningfulWeeklyVisit(visit) {
+  return [
+    visit?.platform_company_id, visit?.unit, visit?.contact_people, visit?.name,
+    visit?.participants, visit?.project, visit?.contact_method, visit?.discussion,
+    visit?.project_impact, visit?.next_action,
+  ].some((value) => String(value || "").trim());
+}
+
+async function buildWeeklyContactsFromPayload(payload, companies) {
+  const companyIndex = platformCompanyIndex(companies);
+  const sourceFile = `${payload.title || mondayReportTitle()}.md`;
+  const rows = [];
+  const unmatchedVisits = [];
+  let matchedVisits = 0;
+  for (const [visitIndex, visit] of (payload.visits || []).entries()) {
+    if (!meaningfulWeeklyVisit(visit)) continue;
+    const platformId = matchVisitPlatform(visit, companyIndex);
+    if (!platformId) {
+      unmatchedVisits.push({
+        unmatched_id: `weekly-unmatched-${String(payload.title || "week").replace(/[^0-9A-Za-z_-]/g, "-")}-${visitIndex + 1}`,
+        来源文件: sourceFile,
+        周报标题: payload.title || "",
+        原始序号: visitIndex + 1,
+        ...structuredClone(visit),
+      });
+      continue;
+    }
+    matchedVisits += 1;
+    const contactDate = String(visit.contact_date || weekMondayFromTitle(payload.title)).trim();
+    const unit = String(visit.unit || "").trim();
+    const project = String(visit.project || "").trim();
+    const names = String(visit.contact_people || visit.name || "").split(/[、,，/|]/).map((name) => name.trim()).filter(Boolean);
+    if (!names.length) names.push("");
+    for (const name of names) {
+      const detail = [visit.discussion, visit.project_impact].map((value) => String(value || "").trim()).filter(Boolean).join("；");
+      rows.push({
+        contact_id: await weeklyContactId([platformId, contactDate, unit, name, project, sourceFile]),
+        platform_company_id: platformId,
+        "接触日期": contactDate,
+        "单位": unit,
+        "接触对象": name,
+        "姓名": name,
+        "职务": String(visit.title || "").trim(),
+        "参与拜访人员": String(visit.participants || "").trim(),
+        "对应项目": project,
+        "接触方式": String(visit.contact_method || "").trim(),
+        "细节内容": detail,
+        "下一步": String(visit.next_action || "").trim(),
+        "来源文件": sourceFile,
+        "来源类型": "周报",
+      });
+    }
+  }
+  return {rows, unmatchedVisits, matchedVisits};
+}
+
+function mergeWeeklyContactsForReport(platformResources, sourceFile, automaticRows, unmatchedVisits) {
+  const resources = platformResources || {};
+  const replaceableTypes = new Set(["周报", "周报（草稿）", "周报修订"]);
+  const existing = (resources.contact_timeline || []).filter((row) => !(
+    String(row["来源文件"] || "") === sourceFile
+    && replaceableTypes.has(String(row["来源类型"] || "").trim())
+  ));
+  const merged = new Map([...existing, ...automaticRows].map((row) => [String(row.contact_id || ""), structuredClone(row)]));
+  (resources.manual_contact_timeline || []).forEach((saved) => {
+    const contactId = String(saved.contact_id || "");
+    if (!contactId) return;
+    if (String(saved["来源类型"] || "").trim() === "已删除") {
+      merged.delete(contactId);
+      return;
+    }
+    if (merged.has(contactId)) {
+      const original = merged.get(contactId);
+      merged.set(contactId, {...original, ...structuredClone(saved), "来源类型": "周报修订", "来源文件": saved["来源文件"] || original["来源文件"] || ""});
+    } else {
+      merged.set(contactId, structuredClone(saved));
+    }
+  });
+  resources.contact_timeline = [...merged.values()].filter((row) => row.contact_id).sort((left, right) => String(right["接触日期"] || "").localeCompare(String(left["接触日期"] || "")));
+  resources.unmatched_weekly_visits = [
+    ...(resources.unmatched_weekly_visits || []).filter((row) => String(row["来源文件"] || "") !== sourceFile),
+    ...unmatchedVisits,
+  ];
+  return resources;
+}
+
 async function updateLedgerFromWeeklyPayload(payload, settings) {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -412,6 +542,7 @@ async function updateLedgerFromWeeklyPayload(payload, settings) {
     const snapshot = JSON.parse(base64ToUtf8(file.content || ""));
     const projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
     const progressRecords = Array.isArray(snapshot.progress_records) ? snapshot.progress_records : [];
+    let visitSync = {rows: [], unmatchedVisits: [], matchedVisits: 0};
     let updated = 0;
     const skipped = [];
     (payload.projects || []).forEach((weeklyProject, index) => {
@@ -447,7 +578,6 @@ async function updateLedgerFromWeeklyPayload(payload, settings) {
       }
       updated += 1;
     });
-    if (!updated) return {updated, skipped};
     snapshot.projects = projects;
     snapshot.progress_records = progressRecords;
     snapshot.generated_at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -455,13 +585,24 @@ async function updateLedgerFromWeeklyPayload(payload, settings) {
       snapshot.platform_resources.projects = structuredClone(projects);
       const linkedIds = new Set((snapshot.platform_resources.project_platform_links || []).map((row) => String(row.project_id || "")));
       snapshot.platform_resources.unassigned_projects = projects.filter((project) => isActiveLedgerProject(project) && !linkedIds.has(String(project.project_id || "")));
+      visitSync = await buildWeeklyContactsFromPayload(payload, snapshot.platform_resources.platform_companies || []);
+      snapshot.platform_resources = mergeWeeklyContactsForReport(
+        snapshot.platform_resources,
+        `${payload.title || mondayReportTitle()}.md`,
+        visitSync.rows,
+        visitSync.unmatchedVisits,
+      );
+      snapshot.platform_resources.generated_at = snapshot.generated_at;
+      snapshot.platform_resources.source = "GitHub 周报完成后自动同步";
     }
     const saveResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/contents/${LEDGER_SNAPSHOT_PATH}`, {
       method: "PUT",
       headers: githubHeaders(settings.token),
       body: JSON.stringify({message: `Update ledger from ${payload.title}`, content: utf8ToBase64(JSON.stringify(snapshot, null, 2)), branch: settings.branch, sha: file.sha}),
     });
-    if (saveResponse.ok) return {updated, skipped};
+    if (saveResponse.ok) {
+      return {updated, skipped, syncedVisits: visitSync.matchedVisits, syncedContactRows: visitSync.rows.length, unmatchedVisits: visitSync.unmatchedVisits};
+    }
     if ((saveResponse.status === 409 || saveResponse.status === 422) && attempt < maxAttempts) continue;
     throw new Error(`台账主档更新失败：${await responseErrorMessage(saveResponse)}`);
   }
@@ -1125,11 +1266,11 @@ async function saveWeeklyForm(status = "draft") {
         try {
           const result = await updateLedgerFromWeeklyPayload(payload, collectGitHubSettings());
           const skipped = result.skipped.length ? `；跳过 ${result.skipped.length} 个无法匹配的项目：${result.skipped.join("、")}` : "";
-          if (result.updated) {
-            showWeeklyResult(`已完成并保存到 GitHub：${data.file}；同时自动导入进度到 ${result.updated} 个台账项目${skipped}。`, result.skipped.length ? "warning" : "success");
-          } else {
-            showWeeklyResult(`周报已完成并保存到 GitHub：${data.file}；但没有匹配到已有台账项目，未导入进度${skipped}。`, "warning");
-          }
+          const visits = `；同步 ${result.syncedVisits || 0} 次拜访（${result.syncedContactRows || 0} 条联系人记录）`;
+          const unmatched = result.unmatchedVisits?.length ? `；另有 ${result.unmatchedVisits.length} 次拜访待确认平台单位` : "";
+          const projects = result.updated ? `自动导入进度到 ${result.updated} 个台账项目` : "没有匹配到已有台账项目，未导入进度";
+          const hasWarning = result.skipped.length || result.unmatchedVisits?.length || !result.updated;
+          showWeeklyResult(`已完成并保存到 GitHub：${data.file}；${projects}${visits}${unmatched}${skipped}。`, hasWarning ? "warning" : "success");
         } catch (error) {
           showWeeklyResult(`周报已完成并保存到 GitHub：${data.file}；但台账自动同步失败：${error.message || error}。可到项目台账点击“进度导入”补同步。`, "warning");
         }
@@ -1235,3 +1376,4 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 setupWeeklyInput();
+
