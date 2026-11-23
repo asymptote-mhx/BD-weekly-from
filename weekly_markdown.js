@@ -49,6 +49,23 @@
     return records;
   }
 
+  function parseProjectDiscussionText(value) {
+    const items = [];
+    let current = null;
+    String(value || "").split(/\r?\n/).forEach((rawLine) => {
+      const line = rawLine.trim();
+      if (!line) return;
+      const match = line.match(/^【(.+?)】\s*(.*)$/);
+      if (match) {
+        current = {name: match[1].trim(), discussion: match[2].trim()};
+        items.push(current);
+      } else if (current) {
+        current.discussion = `${current.discussion}\n${line}`.trim();
+      }
+    });
+    return items;
+  }
+
   function parseVisitLine(line) {
     const visit = {};
     const labels = ["单位", "平台公司", "平台公司ID", "姓名", "接触对象", "职务", "对应项目", "接触日期", "参与拜访人员", "接触方式", "沟通内容", "项目影响", "下一步行动", "下一步日期", "是否有效拜访"];
@@ -62,6 +79,9 @@
       visit[keys[match[1]]] = value;
     });
     if (!visit.contact_people && visit.name) visit.contact_people = visit.name;
+    const discussions = parseProjectDiscussionText(visit.discussion);
+    visit.project_discussions = discussions.filter((item) => item.name !== "其他");
+    visit.general_discussion = discussions.find((item) => item.name === "其他")?.discussion || "";
     return visit;
   }
 
