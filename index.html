@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>填写本周小结</title>
   <link rel="stylesheet" href="styles.css?v=20260827-visit-count-1">
-  <link rel="stylesheet" href="weekly_experience.css?v=20261123-project-discussions-1">
+  <link rel="stylesheet" href="weekly_experience.css?v=20261123-split-layout-1">
 </head>
 <body class="weekly-input-page">
   <header class="app-topbar">
@@ -18,43 +18,57 @@
 
   <main class="weekly-page-shell">
     <section id="weeklyInputPanel" class="weekly-input-panel">
-      <div class="weekly-input-header">
-        <div>
-          <p class="eyebrow">Weekly Report</p>
-          <h1>填写本周小结</h1>
-          <span>标题会按本周周一自动生成，可直接保存为草稿，确认无误后再标记完成。</span>
+      <header class="weekly-sticky-workspace">
+        <div class="weekly-input-header">
+          <div>
+            <p class="eyebrow">Weekly Report</p>
+            <h1>填写本周小结</h1>
+            <span>选择左侧章节，在右侧集中填写；标题、设置和保存操作始终保留在顶部。</span>
+          </div>
+          <nav class="weekly-top-links" aria-label="相关页面">
+            <a href="ledger.html" class="weekly-action-link">线上台账</a>
+            <a href="resources.html" class="weekly-action-link">平台资源库</a>
+            <a href="reports.html" class="weekly-action-link">历史周报 / PDF</a>
+          </nav>
         </div>
-        <a href="ledger.html" class="weekly-action-link">查看线上台账</a>
-        <a href="resources.html" class="weekly-action-link">平台资源库</a>
-        <a href="reports.html" class="weekly-action-link">历史周报 / 导出 PDF</a>
-      </div>
-
-      <label class="weekly-title-label">周报标题<input id="weeklyTitleInput" autocomplete="off"></label>
-
-      <section id="githubSettingsPanel" class="weekly-form-section github-settings-panel">
-        <div class="structured-header">
-          <h2>GitHub 保存设置</h2>
-          <button id="saveGithubSettingsButton" type="button">保存设置</button>
+        <div class="weekly-command-bar">
+          <label class="weekly-title-label">周报标题<input id="weeklyTitleInput" autocomplete="off"></label>
+          <details class="github-settings-menu">
+            <summary>GitHub 设置</summary>
+            <section id="githubSettingsPanel" class="weekly-form-section github-settings-panel">
+              <div class="structured-header"><h2>GitHub 保存设置</h2><button id="saveGithubSettingsButton" type="button">保存设置</button></div>
+              <div class="github-settings-grid">
+                <label>GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx" autocomplete="username"></label>
+                <label>数据仓库<input id="githubRepoInput" value="BD-weekly-data" autocomplete="off"></label>
+                <label>分支<input id="githubBranchInput" value="main" autocomplete="off"></label>
+                <label class="full-width">Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
+              </div>
+            </section>
+          </details>
+          <div class="weekly-form-actions">
+            <button id="saveWeeklyDraftButton" type="button">暂存</button>
+            <button id="completeWeeklyButton" type="button">完成</button>
+          </div>
         </div>
-        <div class="github-settings-grid">
-          <label>GitHub 用户名<input id="githubOwnerInput" value="asymptote-mhx" autocomplete="username"></label>
-          <label>数据仓库<input id="githubRepoInput" value="BD-weekly-data" autocomplete="off"></label>
-          <label>分支<input id="githubBranchInput" value="main" autocomplete="off"></label>
-          <label class="full-width">Token<input id="githubTokenInput" type="password" autocomplete="off" placeholder="只保存在当前浏览器"></label>
-        </div>
-      </section>
+        <div id="weeklyFormResult" class="weekly-result" aria-live="polite"></div>
+      </header>
 
-      <div class="weekly-form-actions">
-        <div>
-          <strong>保存本周小结</strong>
-          <span>暂存可反复修改；完成后供本地台账读取。</span>
-        </div>
-        <button id="saveWeeklyDraftButton" type="button">暂存</button>
-        <button id="completeWeeklyButton" type="button">完成</button>
-      </div>
-      <div id="weeklyFormResult" class="weekly-result" aria-live="polite"></div>
+      <div class="weekly-editor-layout">
+        <aside class="weekly-section-sidebar" aria-label="周报章节">
+          <p class="eyebrow">填写目录</p>
+          <nav class="weekly-section-tabs">
+            <button type="button" data-weekly-section="projects" class="active"><span>项目推进</span><b id="weeklyProjectNavCount">0</b></button>
+            <button type="button" data-weekly-section="visits"><span>本周拜访</span><b id="weeklyVisitNavCount">0</b></button>
+            <button type="button" data-weekly-section="plans"><span>下周计划</span><b id="weeklyPlanNavCount">0</b></button>
+          </nav>
+          <div class="weekly-nav-summary">
+            <strong id="weeklyNavSummaryTitle">项目推进</strong>
+            <div id="weeklyNavItems" class="weekly-nav-items"></div>
+          </div>
+        </aside>
 
-      <section class="weekly-form-section">
+        <div class="weekly-editor-content">
+      <section id="weeklyProjectsSection" class="weekly-form-section" data-weekly-section-panel="projects">
         <div class="structured-header">
           <div><h2>本周项目推进</h2><p>按填写顺序编号；从台账选择项目，只记录本周发生的变化。</p></div>
           <button id="addLedgerWeeklyProjectButton" type="button">从台账选择项目</button>
@@ -63,7 +77,7 @@
         <div id="weeklyProjectRows" class="weekly-rows"></div>
       </section>
 
-      <section class="weekly-form-section">
+      <section id="weeklyVisitsSection" class="weekly-form-section" data-weekly-section-panel="visits" hidden>
         <div class="structured-header">
           <div><h2>本周拜访与沟通 <span id="weeklyVisitCount" class="weekly-count-badge">拜访 0</span></h2><p>资源库已有单位可直接选择；未建档的单位、人员和项目也可以手填。</p></div>
           <a id="newPlatformCompanyLink" class="weekly-action-link" href="http://127.0.0.1:8798/resources.html" target="_blank" rel="noopener">本地新增平台公司</a>
@@ -73,17 +87,19 @@
         <div id="weeklyVisitRows" class="weekly-rows"></div>
       </section>
 
-      <section class="weekly-form-section">
+      <section id="weeklyPlansSection" class="weekly-form-section" data-weekly-section-panel="plans" hidden>
         <div class="structured-header">
           <div><h2>下周工作计划</h2><p>项目为可选项；也可以直接选择平台公司和人员，再填写工作内容。</p></div>
           <button id="addWeeklyPlanButton" type="button">新增下周工作</button>
         </div>
         <div id="weeklyPlanRows" class="weekly-rows"></div>
       </section>
+        </div>
+      </div>
     </section>
   </main>
 
   <script src="platform_sorting.js?v=20260827-province-groups-1"></script>
-  <script src="weekly_input.js?v=20260930-sha-retry-1"></script>
+  <script src="weekly_input.js?v=20261123-split-layout-1"></script>
 </body>
 </html>

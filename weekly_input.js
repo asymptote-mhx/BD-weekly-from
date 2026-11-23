@@ -22,6 +22,7 @@ const LOCAL_WEEKLY_URL = "http://127.0.0.1:8798/weekly-input.html?v=20260704-pla
 const GITHUB_SETTINGS_KEY = "bd-weekly-github-settings";
 const LEDGER_SNAPSHOT_PATH = "ledger/market_workbench_snapshot.json";
 const state = {
+  activeWeeklySection: "projects",
   ledgerProjects: [],
   ledgerSnapshot: null,
   ledgerSnapshotSha: "",
@@ -48,6 +49,9 @@ const elements = {
   githubBranchInput: document.getElementById("githubBranchInput"),
   githubTokenInput: document.getElementById("githubTokenInput"),
   saveGithubSettingsButton: document.getElementById("saveGithubSettingsButton"),
+  weeklySectionTabs: document.querySelector(".weekly-section-tabs"),
+  weeklyNavSummaryTitle: document.getElementById("weeklyNavSummaryTitle"),
+  weeklyNavItems: document.getElementById("weeklyNavItems"),
 };
 
 function guardAgainstFileOpen() {
@@ -1135,6 +1139,7 @@ function normalizeWeeklySequence(container, selector, labelSelector, prefix) {
     const label = row.querySelector(labelSelector);
     if (label) label.textContent = `${prefix} ${sequence}`;
   });
+  scheduleWeeklySectionNav();
 }
 
 function renumberWeeklyProjectRows() {
@@ -1158,6 +1163,75 @@ function isFilledVisitRow(row) {
 function updateWeeklyVisitCount() {
   const count = [...elements.weeklyVisitRows.querySelectorAll(".weekly-visit-card")].filter(isFilledVisitRow).length;
   if (elements.weeklyVisitCount) elements.weeklyVisitCount.textContent = `拜访 ${count}`;
+}
+
+function weeklySectionRows(section) {
+  if (section === "visits") return [...elements.weeklyVisitRows.querySelectorAll(".weekly-visit-card")];
+  if (section === "plans") return [...elements.weeklyPlanRows.querySelectorAll(".weekly-plan-row")];
+  return [...elements.weeklyProjectRows.querySelectorAll(".weekly-project-row")];
+}
+
+function weeklyNavItemDetail(section, row) {
+  if (section === "projects") return row.querySelector('[data-weekly-field="name"]')?.value.trim() || row.querySelector("[data-ledger-project]")?.selectedOptions?.[0]?.textContent.trim() || "项目名称待填写";
+  if (section === "visits") return row.querySelector("[data-visit-custom-unit]")?.value.trim() || row.querySelector('[data-weekly-field="platform_company_id"]')?.selectedOptions?.[0]?.textContent.trim() || row.querySelector("[data-visit-custom-people]")?.value.trim() || "拜访对象待填写";
+  return row.querySelector("[data-weekly-plan-custom-project]")?.value.trim() || row.querySelector("[data-weekly-plan-project-id]")?.selectedOptions?.[0]?.textContent.trim() || row.querySelector("[data-weekly-plan-item]")?.value.trim() || "计划内容待填写";
+}
+
+function renderWeeklySectionNav() {
+  if (!elements.weeklyNavItems) return;
+  const sections = {
+    projects: {title: "项目推进", prefix: "项目", count: "weeklyProjectNavCount"},
+    visits: {title: "本周拜访", prefix: "拜访", count: "weeklyVisitNavCount"},
+    plans: {title: "下周计划", prefix: "计划", count: "weeklyPlanNavCount"},
+  };
+  Object.entries(sections).forEach(([key, config]) => {
+    const counter = document.getElementById(config.count);
+    if (counter) counter.textContent = String(weeklySectionRows(key).length);
+  });
+  const config = sections[state.activeWeeklySection] || sections.projects;
+  const rows = weeklySectionRows(state.activeWeeklySection);
+  elements.weeklyNavSummaryTitle.textContent = config.title;
+  elements.weeklyNavItems.innerHTML = rows.length ? rows.map((row, index) => {
+    const detail = weeklyNavItemDetail(state.activeWeeklySection, row).replace(/^选择[^｜]*$/, "");
+    return `<button type="button" data-weekly-nav-index="${index}"><span>${config.prefix} ${index + 1}</span><small>${escapeHtml(detail || `${config.prefix}内容待填写`)}</small></button>`;
+  }).join("") : `<p>暂无${config.title}内容。</p>`;
+}
+
+function setWeeklySection(section, options = {}) {
+  if (!['projects', 'visits', 'plans'].includes(section)) section = "projects";
+  state.activeWeeklySection = section;
+  document.querySelectorAll("[data-weekly-section-panel]").forEach((panel) => { panel.hidden = panel.dataset.weeklySectionPanel !== section; });
+  elements.weeklySectionTabs?.querySelectorAll("[data-weekly-section]").forEach((button) => button.classList.toggle("active", button.dataset.weeklySection === section));
+  try { localStorage.setItem("bd-weekly-active-section", section); } catch {}
+  renderWeeklySectionNav();
+  if (options.scroll) document.querySelector(`[data-weekly-section-panel="${section}"]`)?.scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+let weeklyNavRenderFrame = 0;
+function scheduleWeeklySectionNav() {
+  cancelAnimationFrame(weeklyNavRenderFrame);
+  weeklyNavRenderFrame = requestAnimationFrame(renderWeeklySectionNav);
+}
+
+function setupWeeklySectionNavigation() {
+  let initial = "projects";
+  try { initial = localStorage.getItem("bd-weekly-active-section") || initial; } catch {}
+  elements.weeklySectionTabs?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-weekly-section]");
+    if (button) setWeeklySection(button.dataset.weeklySection, {scroll: true});
+  });
+  elements.weeklyNavItems?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-weekly-nav-index]");
+    if (!button) return;
+    const row = weeklySectionRows(state.activeWeeklySection)[Number(button.dataset.weeklyNavIndex)];
+    row?.scrollIntoView({behavior: "smooth", block: "start"});
+    row?.querySelector("input:not([type=hidden]), select, textarea")?.focus({preventScroll: true});
+  });
+  [elements.weeklyProjectRows, elements.weeklyVisitRows, elements.weeklyPlanRows].forEach((container) => {
+    container.addEventListener("input", scheduleWeeklySectionNav);
+    container.addEventListener("change", scheduleWeeklySectionNav);
+  });
+  setWeeklySection(initial);
 }
 
 function renderWeeklyPayload(payload) {
@@ -1501,4 +1575,5 @@ window.addEventListener("unhandledrejection", (event) => {
   showWeeklyResult(`页面请求出错：${reason}。请刷新页面后再试。`, "error");
 });
 
+setupWeeklySectionNavigation();
 setupWeeklyInput();
